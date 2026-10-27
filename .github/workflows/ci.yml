@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Node side: type-check, unit tests, and the dashboard build.
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    env:
+      # Tests don't need the Playwright browser binary.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Type-check (server + packages)
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build dashboard + tablet view
+        run: npm run build:dashboard
