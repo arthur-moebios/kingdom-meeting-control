@@ -26,17 +26,25 @@ const RawConfigSchema = z.object({
 
 export type AppConfig = z.infer<typeof RawConfigSchema> & {
   dbPath: string;
+  publicDir: string;
 };
 
 /**
- * Repo root, derived from this file's location (packages/config/src) so paths
- * are stable no matter the process cwd — npm workspace scripts, the watchdog,
- * and Task Scheduler all launch with different cwds.
+ * Base directory for runtime data + static assets. In the source tree it is the
+ * repo root (derived from this file's location). In the packaged Windows app
+ * the launcher sets KMC_BASE_DIR to the install dir (the bundle has a different
+ * layout). Either way, paths are stable regardless of cwd.
  */
-export const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
+export const repoRoot = process.env.KMC_BASE_DIR
+  ? path.resolve(process.env.KMC_BASE_DIR)
+  : path.resolve(import.meta.dirname, "..", "..", "..");
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const repoRuntime = path.join(repoRoot, "runtime");
+  // Built dashboard/tablet assets. Packaged app overrides with KMC_PUBLIC_DIR.
+  const publicDir = env.KMC_PUBLIC_DIR
+    ? path.resolve(repoRoot, env.KMC_PUBLIC_DIR)
+    : path.join(repoRoot, "apps", "dashboard", "dist");
   // Relative env paths resolve against the repo root (not cwd).
   const dataDir = env.KMC_DATA_DIR
     ? path.resolve(repoRoot, env.KMC_DATA_DIR)
@@ -60,6 +68,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     ...parsed,
     dbPath: path.join(parsed.dataDir, "kmc.sqlite"),
+    publicDir,
   };
 }
 

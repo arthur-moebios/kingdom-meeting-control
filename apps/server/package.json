@@ -9,6 +9,7 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@fastify/static": "^10.1.7",
     "@fastify/websocket": "^11.0.1",
     "@kmc/config": "*",
     "@kmc/presentation-monitor": "*",
