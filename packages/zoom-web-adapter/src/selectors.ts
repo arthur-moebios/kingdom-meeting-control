@@ -204,12 +204,25 @@ export const selectors = {
     ],
   },
   stopShareButton: {
-    description: "Stop screen share button (appears while sharing)",
+    description: "Stop screen share button (appears while sharing). In Zoom Web "
+      + "this control carries only visible text, no aria-label, so text matches "
+      + "come first (an aria candidate first would burn the whole timeout).",
     candidates: [
-      'button[aria-label*="Stop Share" i]',
       'button:has-text("Stop Share")',
-      'button[aria-label*="Parar compartilhamento" i]',
       'button:has-text("Parar compartilhamento")',
+      'button:has-text("Parar de compartilhar")',
+      'button[aria-label*="Stop Share" i]',
+      'button[aria-label*="Parar compartilhamento" i]',
+    ],
+  },
+  moreButton: {
+    description: "'More' overflow button in the meeting toolbar. A narrow window "
+      + "(the participants panel docked shrinks the meeting area) collapses Share "
+      + "/ Stop Share out of the toolbar into this menu.",
+    candidates: [
+      'button[aria-label*="More meeting control" i]',
+      'button[aria-label*="Mais controles" i]',
+      'button[aria-label="More"]',
     ],
   },
 } as const satisfies Record<string, SelectorGroup>;

@@ -53,6 +53,17 @@ export class ZoomAutomationService {
   private lastError: string | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
   private autoStopTimer: NodeJS.Timeout | null = null;
+  // Re-entrancy guards: share start/stop drive the same Playwright page, so two
+  // overlapping operations (e.g. a manual stop while the backup auto-stop fires)
+  // fight over the toolbar and corrupt each other (missed clicks, 30s stalls).
+  // Only one share operation runs at a time.
+  private starting = false;
+  private stopping = false;
+  // Serializes ALL page interactions (participant scraping, admit, share
+  // start/stop) so they never run concurrently on the same Playwright page.
+  // Concurrent DOM work was clicking the participants toggle underneath the
+  // share "More" menu, making auto-share miss.
+  private pageLock: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly deps: ZoomAutomationDeps) {
     const s0 = deps.getSettings();
@@ -252,23 +263,30 @@ export class ZoomAutomationService {
     const tick = async (): Promise<void> => {
       if (!this.adapter) return;
       try {
-        // Auto-admit anyone waiting (before reading the list).
-        if (this.deps.getSettings().automations.autoAdmit) {
-          const n = await this.adapter.admitWaiting().catch(() => 0);
-          if (n > 0) {
-            this.deps.log.info({ admitted: n }, "Auto-admitted waiting participant(s)");
-            this.deps.emit("system.warning", { message: `Admitido(s) ${n} da sala de espera.` });
-          }
-        }
-        const { participants, partial } = await this.adapter.getParticipants();
-        const diffs = this.participants.reconcile(participants, partial);
-        for (const d of diffs) {
-          this.deps.emit(d.type, { participant: d.participant });
+        // Scrape under the page lock, and NOT while sharing — during a share the
+        // participants rows vanish, so scraping would click the participants
+        // toggle underneath the share controls and disrupt the share. Participant
+        // management isn't needed during a (short) projection anyway.
+        if (!this.sharing) {
+          await this.runExclusive(async () => {
+            if (this.deps.getSettings().automations.autoAdmit) {
+              const n = await this.adapter!.admitWaiting().catch(() => 0);
+              if (n > 0) {
+                this.deps.log.info({ admitted: n }, "Auto-admitted waiting participant(s)");
+                this.deps.emit("system.warning", { message: `Admitido(s) ${n} da sala de espera.` });
+              }
+            }
+            const { participants, partial } = await this.adapter!.getParticipants();
+            const diffs = this.participants.reconcile(participants, partial);
+            for (const d of diffs) {
+              this.deps.emit(d.type, { participant: d.participant });
+            }
+          });
         }
 
-        // Auto-share reconciliation: in automatic mode, keep sharing while JW
-        // presents. Robust against timing (fires on the next tick regardless of
-        // when the presentation became active).
+        // Auto-share reconciliation (OUTSIDE the lock — these lock internally).
+        // In automatic mode, keep sharing while JW presents. Robust against
+        // timing (fires on the next tick regardless of when it became active).
         const s = this.deps.getSettings();
         if (s.share.mode === "automatic" && !this.sharing && this.deps.isPresentationActive()) {
           this.deps.log.info({}, "Auto-share reconcile: presentation active → sharing");
@@ -399,32 +417,40 @@ export class ZoomAutomationService {
   async startMonitorShare(): Promise<boolean> {
     if (!this.adapter) return false;
     if (this.sharing) return true; // already sharing — don't re-open the picker
-    const s = this.deps.getSettings();
-    const title = s.share.autoSourceTitle || "JW Library";
-    const audio = s.share.shareAudio !== false; // default ON (JW media has audio)
+    if (this.starting || this.stopping) return false; // another op is in flight
+    this.starting = true;
+    try {
+      return await this.runExclusive(async () => {
+        const s = this.deps.getSettings();
+        const title = s.share.autoSourceTitle || "JW Library";
+        const audio = s.share.shareAudio !== false; // default ON (JW media has audio)
 
-    // Retry the open + pick a few times — the toolbar reveal, the Share click, or
-    // the window list populating can intermittently miss on the first try.
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const opened = await this.adapter.startMonitorShare();
-      if (!opened) {
-        await sleep(500);
-        continue;
-      }
-      const picked = this.deps.driveSharePicker
-        ? await this.deps.driveSharePicker(title, audio).catch(() => false)
-        : false;
-      if (picked) {
-        this.sharing = true;
-        if (this.sm.state === "IN_MEETING") this.sm.transition("SHARING");
-        this.deps.emit("zoom.share.started", { auto: true, source: title, audio, attempt });
-        return true;
-      }
-      this.deps.log.warn({ title, attempt }, "Share picker did not complete; retrying");
-      await sleep(600);
+        // Retry the open + pick a few times — the toolbar reveal, the Share click, or
+        // the window list populating can intermittently miss on the first try.
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const opened = await this.adapter!.startMonitorShare();
+          if (!opened) {
+            await sleep(500);
+            continue;
+          }
+          const picked = this.deps.driveSharePicker
+            ? await this.deps.driveSharePicker(title, audio).catch(() => false)
+            : false;
+          if (picked) {
+            this.sharing = true;
+            if (this.sm.state === "IN_MEETING") this.sm.transition("SHARING");
+            this.deps.emit("zoom.share.started", { auto: true, source: title, audio, attempt });
+            return true;
+          }
+          this.deps.log.warn({ title, attempt }, "Share picker did not complete; retrying");
+          await sleep(600);
+        }
+        this.deps.log.error({ title }, "Auto-share failed after retries (operator can share manually)");
+        return false;
+      });
+    } finally {
+      this.starting = false;
     }
-    this.deps.log.error({ title }, "Auto-share failed after retries (operator can share manually)");
-    return false;
   }
 
   /** Debounced auto-stop: stop sharing if the presentation is still gone after a
@@ -442,10 +468,39 @@ export class ZoomAutomationService {
   }
 
   async stopMonitorShare(): Promise<void> {
-    if (this.adapter) await this.adapter.stopScreenShareClick().catch(() => void 0);
-    this.sharing = false;
-    if (this.sm.state === "SHARING") this.sm.transition("IN_MEETING");
-    this.deps.emit("zoom.share.stopped", {});
+    if (!this.sharing && !this.adapter) return;
+    if (this.stopping || this.starting) return; // another op is in flight
+    this.stopping = true;
+    try {
+      // The adapter confirms (returns true) only when the share actually ended.
+      const confirmed = this.adapter
+        ? await this.runExclusive(() => this.adapter!.stopScreenShareClick()).catch(() => false)
+        : true;
+      if (confirmed) {
+        this.sharing = false;
+        if (this.sm.state === "SHARING") this.sm.transition("IN_MEETING");
+        this.deps.emit("zoom.share.stopped", {});
+      } else {
+        // Keep sharing=true so the status stays honest (we are, in fact, still
+        // sharing) and the backup auto-stop / operator retries instead of the UI
+        // falsely showing "stopped".
+        this.deps.log.warn({}, "stopMonitorShare: stop not confirmed; sharing still active, will retry");
+        this.scheduleAutoStop();
+      }
+    } finally {
+      this.stopping = false;
+    }
+  }
+
+  /** Run `fn` with exclusive access to the page (serialized against all other
+   *  page interactions). Never nest a runExclusive call inside another. */
+  private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.pageLock.then(fn, fn);
+    this.pageLock = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   /** Called by the server when JW Library presentation state changes. */

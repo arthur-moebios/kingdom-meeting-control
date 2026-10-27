@@ -63,6 +63,11 @@ export class ChromiumManager {
       "--disable-renderer-backgrounding",
       "--disable-background-timer-throttling",
     ];
+    // Optional CDP endpoint for live DOM inspection during development only
+    // (set KMC_DEBUG_PORT). Never enabled in normal operation.
+    if (process.env.KMC_DEBUG_PORT) {
+      args.push(`--remote-debugging-port=${process.env.KMC_DEBUG_PORT}`);
+    }
     if (this.opts.captureSourceTitle) {
       // Experimental auto-share: pick the matching screen without the OS picker.
       args.push(

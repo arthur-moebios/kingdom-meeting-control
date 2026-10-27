@@ -222,24 +222,67 @@ export class ZoomWebAdapter {
     }
   }
 
-  /** True if a share is currently active (Zoom shows a "Stop Share" control). */
-  async isSharing(): Promise<boolean> {
+  /**
+   * Open the "More" (overflow) meeting-controls menu. The window here is narrow
+   * (the docked participants panel shrinks the meeting area), so Zoom collapses
+   * Share / Stop Share out of the toolbar into this menu. Returns true if the
+   * menu button was found and clicked.
+   */
+  private async openMoreMenu(): Promise<boolean> {
     await this.revealControls();
-    return (await this.firstVisible(selectors.stopShareButton, 1000)) !== null;
+    const more = await this.firstVisible(selectors.moreButton, 2000);
+    if (!more) return false;
+    await more.click({ force: true }).catch(() => void 0);
+    await this.page.waitForTimeout(450);
+    return true;
+  }
+
+  private async closeMenu(): Promise<void> {
+    await this.page.keyboard.press("Escape").catch(() => void 0);
+    await this.page.waitForTimeout(120);
+  }
+
+  /**
+   * Find a toolbar control (Share / Stop Share) that may be directly in the
+   * toolbar (wide window) OR collapsed into the "More" overflow menu (narrow
+   * window — the usual case with the participants panel docked). Tries direct
+   * first, then opens the menu. If it had to open the menu, it is left open so
+   * the caller can click the returned control. Returns null if not found.
+   */
+  private async findToolbarControl(
+    group: SelectorGroup,
+    timeoutMs: number,
+  ): Promise<Locator | null> {
+    await this.revealControls();
+    const direct = await this.firstVisible(group, Math.min(timeoutMs, 1200));
+    if (direct) return direct;
+    if (await this.openMoreMenu()) {
+      return this.firstVisible(group, timeoutMs);
+    }
+    return null;
+  }
+
+  /** True if a share is currently active (a visible "Stop Share" control exists,
+   *  directly in the toolbar or inside the More menu). */
+  async isSharing(): Promise<boolean> {
+    const btn = await this.findToolbarControl(selectors.stopShareButton, 1000);
+    const sharing = btn !== null;
+    await this.closeMenu();
+    return sharing;
   }
 
   /**
    * Click Zoom's Share button to open the native getDisplayMedia picker. The
    * click MUST be a trusted input event (getDisplayMedia requires user
-   * activation), so we reveal the control bar and use a real Playwright click
-   * (never a JS .click(), which would be untrusted and rejected).
+   * activation), so we use a real Playwright click (never a JS .click(), which
+   * would be untrusted and rejected). Share collapses into the "More" menu on a
+   * narrow window, so findToolbarControl looks there too.
    */
   async startMonitorShare(): Promise<boolean> {
     if (!(await this.isInMeeting())) return false;
-    await this.revealControls();
-    const btn = await this.firstVisible(selectors.shareButton, 4000);
+    const btn = await this.findToolbarControl(selectors.shareButton, 3000);
     if (!btn) {
-      this.log.warn({}, "startMonitorShare: Share button not visible");
+      this.log.warn({}, "startMonitorShare: Share button not found (toolbar or More menu)");
       return false;
     }
     await btn.click().catch(() => void 0);
@@ -347,12 +390,14 @@ export class ZoomWebAdapter {
    */
   private async openParticipantsPanel(): Promise<boolean> {
     if (await this.anyRowVisible()) return true;
-    const toggle = await this.firstVisible(selectors.participantsToggle, 2000);
+    // Bounded: a failing open must not hold the page lock long (it would starve
+    // auto-share, which runs under the same lock).
+    const toggle = await this.firstVisible(selectors.participantsToggle, 1200);
     if (!toggle) return false;
     await toggle.click().catch(() => void 0);
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 6; i++) {
       if (await this.anyRowVisible()) return true;
-      await this.page.waitForTimeout(350);
+      await this.page.waitForTimeout(300);
     }
     return false;
   }
@@ -364,9 +409,14 @@ export class ZoomWebAdapter {
    */
   async getParticipants(): Promise<{ participants: Omit<ZoomParticipant, "handRaisedAt">[]; partial: boolean }> {
     if (!(await this.isInMeeting())) return { participants: [], partial: false };
-    const opened = await this.openParticipantsPanel();
-    if (!opened) {
-      this.log.warn({}, "Participants panel could not be opened");
+    // PASSIVE: read only if the panel is already open — never click the toggle
+    // here. Forcing the panel open docks it, which shrinks the meeting area and
+    // collapses Share / Stop Share into the "More" overflow menu, breaking
+    // auto-share. (The toggle is itself collapsed into "More" on a narrow window,
+    // so forcing it also failed every poll and starved the page lock.) The
+    // operator opens the panel when they want to manage participants; unmute
+    // opens it on demand.
+    if (!(await this.anyRowVisible())) {
       return { participants: [], partial: false };
     }
 
@@ -466,17 +516,29 @@ export class ZoomWebAdapter {
     return true;
   }
 
-  /** Click Zoom's "Stop Share" to end an active share. Retries + confirms. */
+  /**
+   * Click Zoom's "Stop Share" to end an active share. Retries + confirms.
+   *
+   * On a narrow window Stop Share is collapsed into the "More" overflow menu
+   * (findToolbarControl handles that), so earlier attempts that only hunted the
+   * toolbar found a zero-size element and never actually stopped the share. A
+   * real Playwright click on the menu item (trusted pointer+mouse events) does
+   * the job; we then confirm the control is gone.
+   */
   async stopScreenShareClick(): Promise<boolean> {
     for (let attempt = 0; attempt < 3; attempt++) {
-      await this.revealControls();
-      const btn = await this.firstVisible(selectors.stopShareButton, 2500);
+      const btn = await this.findToolbarControl(selectors.stopShareButton, 1500);
       if (btn) {
-        await btn.click().catch(() => void 0);
-        await this.page.waitForTimeout(450);
-        // Confirm the share actually ended (Stop Share gone).
-        if (!(await this.firstVisible(selectors.stopShareButton, 800))) return true;
+        await btn.click({ force: true }).catch(() => void 0);
+        await this.page.waitForTimeout(700);
+        await this.closeMenu();
+        if (!(await this.isSharing())) return true;
+      } else {
+        // No visible Stop Share control anywhere → nothing is sharing.
+        await this.closeMenu();
+        if (!(await this.isSharing())) return true;
       }
+      await this.page.waitForTimeout(300);
     }
     this.log.warn({}, "stopScreenShareClick: could not confirm stop after retries");
     return false;
