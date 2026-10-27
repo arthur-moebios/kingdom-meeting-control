@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Management;
 
 // Tiny launcher for the packaged Windows app. Sets the packaged layout via env
 // vars and starts the bundled Node server, then opens the operator dashboard.
@@ -9,6 +10,30 @@ class Launcher
     static void Main()
     {
         string dir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
+        string serverPath = Path.Combine(dir, "server.mjs");
+
+        // Replace any previous instance first. With the console hidden the user
+        // can't Ctrl+C an old run, so a stale Node could hold port 4317 and make
+        // the new instance fail to bind (dashboard then shows a broken/blank
+        // page). Kill node processes running OUR server.mjs before starting.
+        try
+        {
+            using (var searcher = new ManagementObjectSearcher(
+                "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'node.exe'"))
+            {
+                foreach (ManagementObject mo in searcher.Get())
+                {
+                    var cmd = mo["CommandLine"] as string;
+                    if (cmd != null && cmd.IndexOf(serverPath, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        try { Process.GetProcessById(Convert.ToInt32(mo["ProcessId"])).Kill(); }
+                        catch { }
+                    }
+                }
+            }
+            System.Threading.Thread.Sleep(600);
+        }
+        catch { }
 
         var psi = new ProcessStartInfo
         {

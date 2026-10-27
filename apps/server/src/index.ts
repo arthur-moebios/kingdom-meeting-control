@@ -27,7 +27,7 @@ function loadEnvFile(): void {
 async function main(): Promise<void> {
   loadEnvFile();
   const cfg = loadConfig();
-  const { logger, ring } = createLogger(cfg.logLevel);
+  const { logger, ring } = createLogger(cfg.logLevel, path.join(cfg.dataDir, "kmc.log"));
 
   logger.info(
     { host: cfg.host, port: cfg.port, headless: cfg.chromiumHeadless, authEnabled: cfg.authEnabled },
@@ -66,7 +66,10 @@ async function main(): Promise<void> {
   // so the dashboard can connect and watch the real state as it comes up.
   void ctx.bootstrap();
 
+  let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info({ signal }, "Shutting down");
     try {
       await discovery.stop();
@@ -79,6 +82,8 @@ async function main(): Promise<void> {
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  // Lets the dashboard "Encerrar" button stop the app (no console to Ctrl+C).
+  ctx.onShutdownRequest = (reason) => void shutdown(reason);
 }
 
 main().catch((err) => {

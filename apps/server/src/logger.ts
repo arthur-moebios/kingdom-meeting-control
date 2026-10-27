@@ -1,4 +1,6 @@
 import pino from "pino";
+import fs from "node:fs";
+import path from "node:path";
 import { Writable } from "node:stream";
 
 export interface LogRecord {
@@ -33,12 +35,27 @@ export class LogRingBuffer {
   }
 }
 
-export function createLogger(level: string): { logger: pino.Logger; ring: LogRingBuffer } {
+export function createLogger(
+  level: string,
+  logFile?: string,
+): { logger: pino.Logger; ring: LogRingBuffer } {
   const ring = new LogRingBuffer();
 
+  // With the packaged app's console hidden, also persist a readable log to a
+  // file so crashes/startup problems can be diagnosed. Best-effort.
+  let fileStream: fs.WriteStream | null = null;
+  if (logFile) {
+    try {
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fileStream = fs.createWriteStream(logFile, { flags: "w" });
+    } catch {
+      fileStream = null;
+    }
+  }
+
   // Custom stream that captures structured records into the ring buffer AND
-  // writes a readable line to stdout. Logs never contain tokens/cookies —
-  // callers must not log secrets (enforced by convention + review).
+  // writes a readable line to stdout + the log file. Logs never contain
+  // tokens/cookies — callers must not log secrets (convention + review).
   const capture = new Writable({
     write(chunk, _enc, cb) {
       const line = chunk.toString();
@@ -51,9 +68,13 @@ export function createLogger(level: string): { logger: pino.Logger; ring: LogRin
           time: new Date(o.time).toISOString(),
           msg: o.msg ?? "",
         });
-        process.stdout.write(
-          `${new Date(o.time).toISOString()} ${levelLabel.toUpperCase().padEnd(5)} ${o.msg ?? ""}\n`,
-        );
+        const readable = `${new Date(o.time).toISOString()} ${levelLabel.toUpperCase().padEnd(5)} ${o.msg ?? ""}\n`;
+        process.stdout.write(readable);
+        try {
+          fileStream?.write(readable);
+        } catch {
+          /* ignore file write errors */
+        }
       } catch {
         process.stdout.write(line);
       }

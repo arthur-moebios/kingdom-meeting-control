@@ -18,6 +18,8 @@ export class AppContext {
   readonly zoom: ZoomAutomationService;
   readonly presentation: PresentationMonitorService;
   readonly meeting: MeetingService;
+  /** Set by index.ts; lets an API call trigger a graceful shutdown. */
+  onShutdownRequest: ((reason: string) => void) | null = null;
   private settings: Settings;
 
   constructor(

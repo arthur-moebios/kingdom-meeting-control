@@ -88,6 +88,13 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get("/api/v1/capabilities", viewer, async () => ctx.zoom.getCapabilities());
 
+  // Graceful shutdown from the dashboard (the packaged app has no console).
+  app.post("/api/v1/system/shutdown", admin, async (_req, reply) => {
+    ctx.db.audit("admin", "system.shutdown", {});
+    await reply.send({ ok: true, message: "Encerrando o Kingdom Meeting Control…" });
+    setTimeout(() => ctx.onShutdownRequest?.("dashboard"), 200);
+  });
+
   // -- zoom status / control -------------------------------------------------
   app.get("/api/v1/zoom/status", viewer, async () => ctx.zoom.getStatus());
 

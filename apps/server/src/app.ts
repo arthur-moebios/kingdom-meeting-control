@@ -32,15 +32,26 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   // process (no Vite). In dev the dist folder is absent, so this is skipped and
   // Vite serves on :5173. Declared /api and /ws routes take precedence.
   const distDir = ctx.cfg.publicDir;
-  if (fs.existsSync(path.join(distDir, "index.html"))) {
-    await app.register(fastifyStatic, { root: distDir, prefix: "/" });
-    app.setNotFoundHandler((req, reply) => {
-      if (req.method === "GET" && !req.url.startsWith("/api") && !req.url.startsWith("/ws")) {
-        return reply.sendFile("index.html");
-      }
-      return reply.code(404).send({ error: "not_found" });
-    });
+  const hasIndex = fs.existsSync(path.join(distDir, "index.html"));
+  // Always register static serving (create the root so registration can't throw);
+  // log whether index.html is actually present, so a packaging/layout problem is
+  // visible in the log instead of a silent "everything 404s".
+  try {
+    fs.mkdirSync(distDir, { recursive: true });
+  } catch {
+    /* ignore */
+  }
+  await app.register(fastifyStatic, { root: distDir, prefix: "/" });
+  app.setNotFoundHandler((req, reply) => {
+    if (hasIndex && req.method === "GET" && !req.url.startsWith("/api") && !req.url.startsWith("/ws")) {
+      return reply.sendFile("index.html");
+    }
+    return reply.code(404).send({ error: "not_found" });
+  });
+  if (hasIndex) {
     ctx.logger.info({ distDir }, "Serving built dashboard + tablet view");
+  } else {
+    ctx.logger.error({ distDir }, "index.html NOT FOUND in publicDir — dashboard will not load");
   }
 
   app.setErrorHandler((err: unknown, _req, reply) => {

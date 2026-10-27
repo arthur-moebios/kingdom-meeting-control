@@ -49,6 +49,7 @@ export const api = {
   shareStop: () => req<unknown>("POST", "/share/stop"),
   displays: () => req<unknown>("GET", "/displays"),
   logs: () => req<{ logs: { time: string; levelLabel: string; msg: string }[] }>("GET", "/system/logs?n=50"),
+  shutdown: () => req<unknown>("POST", "/system/shutdown"),
   getSettings: () => req<Settings>("GET", "/settings"),
   putSettings: (patch: SettingsUpdate) => req<Settings>("PUT", "/settings", patch),
   net: () => req<{ addresses: string[]; port: number; panelUrls: string[]; tabletUrls: string[] }>("GET", "/net"),

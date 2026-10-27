@@ -74,6 +74,17 @@ export function App() {
             {advanced ? "Ocultar avançado" : "Avançado"}
           </button>
           <button className="secondary" onClick={() => setShowSettings(true)}>⚙ Configurações</button>
+          <button
+            className="danger"
+            disabled={!!busy}
+            onClick={() => {
+              if (window.confirm("Encerrar o Kingdom Meeting Control? O painel e o tablet vão desconectar.")) {
+                run("shutdown", () => api.shutdown());
+              }
+            }}
+          >
+            ⏻ Encerrar
+          </button>
         </div>
       </header>
 
