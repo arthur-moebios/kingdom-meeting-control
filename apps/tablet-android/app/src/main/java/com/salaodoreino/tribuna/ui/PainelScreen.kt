@@ -70,11 +70,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun PainelScreen(
-    state: UiState,
-    onDismiss: (String) -> Unit,
-    onSetToken: (String) -> Unit,
-) {
+fun PainelScreen(state: UiState, onDismiss: (String) -> Unit, onSetToken: (String) -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var running by remember { mutableStateOf(true) }
     var elapsed by remember { mutableIntStateOf(0) }
@@ -88,55 +84,99 @@ fun PainelScreen(
     var fontScale by remember { mutableFloatStateOf(1f) }
     var showSettings by remember { mutableStateOf(false) }
 
-    if (showSettings) TokenDialog(onSetToken, onClose = { showSettings = false })
+    val smaller = { fontScale = (fontScale - 0.1f).coerceAtLeast(0.8f) }
+    val bigger = { fontScale = (fontScale + 0.1f).coerceAtMost(1.6f) }
+
+    if (showSettings) TokenDialog(onSetToken) { showSettings = false }
 
     Scaffold(
         containerColor = C.bg,
         bottomBar = { BottomNav(selectedTab) { selectedTab = it } },
     ) { pad ->
-        Column(
-            modifier = Modifier.padding(pad).fillMaxSize().background(C.bg).padding(14.dp),
-        ) {
+        Column(Modifier.padding(pad).fillMaxSize().background(C.bg).padding(14.dp)) {
             Header(state) { showSettings = true }
             Spacer(Modifier.height(12.dp))
-
-            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                val landscape = maxWidth > maxHeight
-                if (landscape) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            TimerCard(elapsed, target, running, { running = !running }) { elapsed = 0 }
-                            HandsCard(state.hands, state.partial, innerScroll = true, modifier = Modifier.weight(1f), onDismiss = onDismiss)
-                        }
-                        AnnouncementsCard(
-                            fontScale,
-                            onSmaller = { fontScale = (fontScale - 0.1f).coerceAtLeast(0.8f) },
-                            onBigger = { fontScale = (fontScale + 0.1f).coerceAtMost(1.6f) },
-                            innerScroll = true,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                        )
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        TimerCard(elapsed, target, running, { running = !running }) { elapsed = 0 }
-                        HandsCard(state.hands, state.partial, innerScroll = false, onDismiss = onDismiss)
-                        AnnouncementsCard(
-                            fontScale,
-                            onSmaller = { fontScale = (fontScale - 0.1f).coerceAtLeast(0.8f) },
-                            onBigger = { fontScale = (fontScale + 0.1f).coerceAtMost(1.6f) },
-                            innerScroll = false,
-                        )
-                    }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                when (selectedTab) {
+                    0 -> Dashboard(state, elapsed, target, running, { running = !running }, { elapsed = 0 }, fontScale, smaller, bigger, onDismiss)
+                    1 -> AnnouncementsCard(fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.fillMaxSize())
+                    2 -> Column { TimerCard(elapsed, target, running, { running = !running }) { elapsed = 0 } }
+                    3 -> ParticipantsTab(state, onDismiss)
+                    else -> MaisTab(state) { showSettings = true }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun Dashboard(
+    state: UiState,
+    elapsed: Int, target: Int, running: Boolean, onToggle: () -> Unit, onReset: () -> Unit,
+    fontScale: Float, smaller: () -> Unit, bigger: () -> Unit,
+    onDismiss: (String) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val landscape = maxWidth > maxHeight
+        if (landscape) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TimerCard(elapsed, target, running, onToggle, onReset)
+                    HandsCard(state.hands, state.partial, innerScroll = true, modifier = Modifier.weight(1f), onDismiss = onDismiss)
+                }
+                AnnouncementsCard(fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.weight(1f).fillMaxHeight())
+            }
+        } else {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TimerCard(elapsed, target, running, onToggle, onReset)
+                HandsCard(state.hands, state.partial, innerScroll = false, onDismiss = onDismiss)
+                AnnouncementsCard(fontScale, smaller, bigger, innerScroll = false)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParticipantsTab(state: UiState, onDismiss: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard(Modifier.fillMaxWidth()) {
+            CardTitle(Icons.Filled.People, "Participantes")
+            Spacer(Modifier.height(8.dp))
+            Text("${state.participantCount} conectados na reunião", color = C.fg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Lista completa de participantes em breve.", color = C.muted, fontSize = 13.sp)
+        }
+        HandsCard(state.hands, state.partial, innerScroll = true, modifier = Modifier.weight(1f), onDismiss = onDismiss)
+    }
+}
+
+@Composable
+private fun MaisTab(state: UiState, onOpenSettings: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard(Modifier.fillMaxWidth()) {
+            CardTitle(Icons.Filled.Settings, "Configuração")
+            Spacer(Modifier.height(10.dp))
+            InfoRow("Conexão", connLabel(state))
+            InfoRow("Salão (host)", state.host ?: "—")
+            InfoRow("Versão", "0.1.0")
+            Spacer(Modifier.height(12.dp))
+            PillButton("Configurar token", Icons.Filled.Settings, C.blue, Color.White, onOpenSettings)
+        }
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(label, color = C.muted, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Text(value, color = C.fg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+private fun connLabel(state: UiState): String = when (state.conn) {
+    Conn.NO_TOKEN -> "Token não configurado"
+    Conn.SEARCHING -> "Procurando o Salão…"
+    Conn.OFFLINE -> "Sem conexão"
+    Conn.CONNECTED -> if (state.meetingLive) "Reunião ao vivo" else "Conectado (aguardando reunião)"
 }
 
 @Composable
@@ -171,14 +211,12 @@ private fun Header(state: UiState, onSettings: () -> Unit) {
     }
     val ptBR = Locale("pt", "BR")
     val time = now.format(DateTimeFormatter.ofPattern("HH:mm"))
-    val date = now.format(DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", ptBR))
-        .replaceFirstChar { it.uppercase(ptBR) }
+    val date = now.format(DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", ptBR)).replaceFirstChar { it.uppercase(ptBR) }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(C.blue),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Filled.MenuBook, null, tint = Color.White) }
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(C.blue), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.MenuBook, null, tint = Color.White)
+        }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text("Salão do Reino", color = C.fg, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -199,26 +237,21 @@ private fun Header(state: UiState, onSettings: () -> Unit) {
 
 @Composable
 private fun StatusChip(state: UiState) {
-    val (dot, title, sub, tint, bg, bd) = statusVisuals(state)
+    val v = statusVisuals(state)
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp)).background(bg).border(1.dp, bd, RoundedCornerShape(10.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(v.bg).border(1.dp, v.bd, RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(9.dp).clip(CircleShape).background(dot))
+        Box(Modifier.size(9.dp).clip(CircleShape).background(v.dot))
         Spacer(Modifier.width(8.dp))
         Column {
-            Text(title, color = tint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Text(sub, color = C.muted, fontSize = 11.sp)
+            Text(v.title, color = v.tint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(v.sub, color = C.muted, fontSize = 11.sp)
         }
     }
 }
 
-private data class StatusViz(
-    val dot: Color, val title: String, val sub: String,
-    val tint: Color, val bg: Color, val bd: Color,
-)
+private data class StatusViz(val dot: Color, val title: String, val sub: String, val tint: Color, val bg: Color, val bd: Color)
 
 private fun statusVisuals(state: UiState): StatusViz = when (state.conn) {
     Conn.NO_TOKEN -> StatusViz(C.amber, "Configurar token", "Toque na engrenagem", C.amber, Color(0xFF2A1E05), Color(0xFF5C451E))
@@ -234,8 +267,7 @@ private fun statusVisuals(state: UiState): StatusViz = when (state.conn) {
 @Composable
 private fun IconChip(icon: ImageVector, onClick: () -> Unit) {
     Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(C.card)
-            .border(1.dp, C.border, RoundedCornerShape(10.dp)).clickable { onClick() },
+        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(C.card).border(1.dp, C.border, RoundedCornerShape(10.dp)).clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) { Icon(icon, null, tint = C.fg, modifier = Modifier.size(20.dp)) }
 }
@@ -246,8 +278,7 @@ private fun IconChip(icon: ImageVector, onClick: () -> Unit) {
 @Composable
 private fun SectionCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = modifier.clip(RoundedCornerShape(16.dp)).background(C.card)
-            .border(1.dp, C.border, RoundedCornerShape(16.dp)).padding(16.dp),
+        modifier = modifier.clip(RoundedCornerShape(16.dp)).background(C.card).border(1.dp, C.border, RoundedCornerShape(16.dp)).padding(16.dp),
         content = content,
     )
 }
@@ -305,13 +336,7 @@ private fun PillButton(label: String, icon: ImageVector, bg: Color, fg: Color, o
 }
 
 @Composable
-private fun HandsCard(
-    hands: List<HandUi>,
-    partial: Boolean,
-    innerScroll: Boolean,
-    modifier: Modifier = Modifier,
-    onDismiss: (String) -> Unit,
-) {
+private fun HandsCard(hands: List<HandUi>, partial: Boolean, innerScroll: Boolean, modifier: Modifier = Modifier, onDismiss: (String) -> Unit) {
     SectionCard(modifier.fillMaxWidth()) {
         CardTitle(Icons.Filled.PanTool, "Mãos levantadas (${hands.size})") {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -381,8 +406,7 @@ private fun AnnouncementsCard(fontScale: Float, onSmaller: () -> Unit, onBigger:
 @Composable
 private fun FontButton(label: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(C.cardAlt)
-            .border(1.dp, C.border, RoundedCornerShape(10.dp)).clickable { onClick() },
+        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(C.cardAlt).border(1.dp, C.border, RoundedCornerShape(10.dp)).clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) { Text(label, color = C.fg, fontWeight = FontWeight.Bold) }
 }
@@ -401,10 +425,7 @@ private fun BottomNav(selected: Int, onSelect: (Int) -> Unit) {
         NavItem("Participantes", Icons.Filled.People),
         NavItem("Mais", Icons.Filled.MoreHoriz),
     )
-    Row(
-        modifier = Modifier.fillMaxWidth().background(C.bg).padding(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    Row(Modifier.fillMaxWidth().background(C.bg).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items.forEachIndexed { i, item ->
             val active = i == selected
             Column(

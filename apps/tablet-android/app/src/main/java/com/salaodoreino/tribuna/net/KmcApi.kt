@@ -1,8 +1,8 @@
 package com.salaodoreino.tribuna.net
 
-import com.salaodoreino.tribuna.data.AppJson
-import com.salaodoreino.tribuna.data.RaisedHands
-import com.salaodoreino.tribuna.data.ZoomStatus
+import com.salaodoreino.tribuna.model.AppJson
+import com.salaodoreino.tribuna.model.RaisedHands
+import com.salaodoreino.tribuna.model.ZoomStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
