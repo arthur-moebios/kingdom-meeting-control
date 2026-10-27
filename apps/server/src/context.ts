@@ -1,5 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
+import { spawn } from "node:child_process";
 import type pino from "pino";
-import type { AppConfig } from "@kmc/config";
+import { repoRoot, type AppConfig } from "@kmc/config";
 import { ZoomAutomationService } from "@kmc/zoom-automation";
 import { PresentationMonitorService } from "@kmc/presentation-monitor";
 import { MeetingService } from "@kmc/meeting";
@@ -50,6 +53,7 @@ export class AppContext {
       getSettings: () => this.settings,
       isPresentationActive: () => this.presentation.getStatus().presentationActive,
       emit: (type, data) => this.bus.publish(type, data),
+      driveSharePicker: (sourceTitle, audio) => this.driveSharePicker(sourceTitle, audio),
     });
 
     this.meeting = new MeetingService({
@@ -69,6 +73,60 @@ export class AppContext {
     this.settings = next;
     this.db.saveSettings(next);
     this.db.audit("admin", "settings.update", {});
+  }
+
+  /** Locate share-picker.ps1 (packaged at base dir, or scripts/win in dev). */
+  private sharePickerScript(): string | null {
+    const candidates = [
+      path.join(repoRoot, "share-picker.ps1"),
+      path.join(repoRoot, "scripts", "win", "share-picker.ps1"),
+    ];
+    return candidates.find((p) => fs.existsSync(p)) ?? null;
+  }
+
+  /**
+   * Windows-only: drive Chrome's native getDisplayMedia picker via UI Automation
+   * (select the source window, enable system audio, click Share). Resolves true
+   * only when the script reports the share was confirmed.
+   */
+  private driveSharePicker(sourceTitle: string, audio: boolean): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (process.platform !== "win32") return resolve(false);
+      const script = this.sharePickerScript();
+      if (!script) {
+        this.logger.warn({}, "share-picker.ps1 not found — cannot drive the picker");
+        return resolve(false);
+      }
+      const ps = spawn(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          script,
+          "-SourceTitle",
+          sourceTitle,
+          "-Audio",
+          audio ? "1" : "0",
+        ],
+        { windowsHide: true },
+      );
+      let out = "";
+      ps.stdout?.on("data", (d: Buffer) => (out += d.toString()));
+      ps.on("error", (err) => {
+        this.logger.warn({ err: String(err) }, "share-picker spawn error");
+        resolve(false);
+      });
+      ps.on("close", () => {
+        const ok = /\bOK\b/.test(out);
+        this.logger.info(
+          { sourceTitle, audio, ok, out: out.trim().slice(0, 200) },
+          "share-picker finished",
+        );
+        resolve(ok);
+      });
+    });
   }
 
   getSnapshot(): Snapshot {

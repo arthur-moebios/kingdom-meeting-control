@@ -50,6 +50,7 @@ jobs:
           Copy-Item -Recurse node_modules\playwright-core pkg\node_modules\playwright-core
           Copy-Item (Get-Command node).Source pkg\node.exe
           Copy-Item scripts\win\install-autostart.ps1 pkg\
+          Copy-Item scripts\win\share-picker.ps1 pkg\
           Copy-Item scripts\win\LEIA-ME.txt pkg\
           $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           & $csc /nologo /target:winexe /r:System.Management.dll /out:pkg\KingdomMeetingControl.exe scripts\win\Launcher.cs

@@ -27,6 +27,12 @@ export interface ZoomAutomationDeps {
   isPresentationActive: () => boolean;
   /** Emit a domain event (to broadcast + persist). */
   emit: (type: EventType, data?: Record<string, unknown>) => void;
+  /**
+   * Windows-only: drive the native getDisplayMedia picker (UI Automation) to
+   * select the source window by title, enable system audio, and click Share.
+   * Returns true when the share was confirmed. Absent off Windows.
+   */
+  driveSharePicker?: (sourceTitle: string, audio: boolean) => Promise<boolean>;
 }
 
 /**
@@ -378,17 +384,37 @@ export class ZoomAutomationService {
     await this.chromium.setHidden(hidden);
   }
 
-  /** EXPERIMENTAL: start sharing the JW Library window (projector content). */
+  /**
+   * Start sharing the JW Library window (projector content). Reveals Zoom's
+   * toolbar + clicks Share to open the native picker, then (on Windows) drives
+   * the picker to select the JW Library window + enable system audio + Share.
+   * `sharing` is only set once the picker confirms, so a cancelled/failed pick
+   * doesn't leave the state stuck.
+   */
   async startMonitorShare(): Promise<boolean> {
     if (!this.adapter) return false;
     if (this.sharing) return true; // already sharing — don't re-open the picker
-    const ok = await this.adapter.startMonitorShare();
-    if (ok) {
+    const opened = await this.adapter.startMonitorShare();
+    if (!opened) return false;
+
+    const s = this.deps.getSettings();
+    const title = s.share.autoSourceTitle || "JW Library";
+    const audio = s.share.shareAudio !== false; // default ON (JW media has audio)
+    const picked = this.deps.driveSharePicker
+      ? await this.deps.driveSharePicker(title, audio).catch(() => false)
+      : false;
+
+    if (picked) {
       this.sharing = true;
       if (this.sm.state === "IN_MEETING") this.sm.transition("SHARING");
-      this.deps.emit("zoom.share.started", { auto: true, experimental: true });
+      this.deps.emit("zoom.share.started", { auto: true, source: title, audio });
+    } else {
+      this.deps.log.warn(
+        { title },
+        "Share picker not completed automatically — the dialog is open for the operator (assisted).",
+      );
     }
-    return ok;
+    return picked;
   }
 
   async stopMonitorShare(): Promise<void> {

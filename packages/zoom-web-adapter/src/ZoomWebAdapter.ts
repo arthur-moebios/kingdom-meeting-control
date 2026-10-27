@@ -196,17 +196,41 @@ export class ZoomWebAdapter {
   }
 
   /**
-   * EXPERIMENTAL automatic monitor share. Clicks Zoom's Share button; relies on
-   * the Chromium --auto-select-desktop-capture-source flag (set at launch) to
-   * pick the projector screen without the native picker. Without that flag the
-   * native OS picker appears and the operator must choose (assisted mode).
+   * Reveal Zoom's auto-hiding control bar by moving the mouse (trusted CDP
+   * input, works even when the window is off-screen), so toolbar buttons become
+   * clickable. Without this, firstVisible(shareButton) times out because Zoom
+   * hides the bar after a few seconds of inactivity.
+   */
+  private async revealControls(): Promise<void> {
+    try {
+      const size = await this.page.evaluate(() => {
+        const g = globalThis as { innerWidth?: number; innerHeight?: number };
+        return { w: g.innerWidth ?? 1280, h: g.innerHeight ?? 800 };
+      });
+      await this.page.mouse.move(Math.round(size.w / 2), Math.round(size.h / 2));
+      await this.page.mouse.move(Math.round(size.w / 2), size.h - 24);
+      await this.page.waitForTimeout(350);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
+   * Click Zoom's Share button to open the native getDisplayMedia picker. The
+   * click MUST be a trusted input event (getDisplayMedia requires user
+   * activation), so we reveal the control bar and use a real Playwright click
+   * (never a JS .click(), which would be untrusted and rejected).
    */
   async startMonitorShare(): Promise<boolean> {
     if (!(await this.isInMeeting())) return false;
-    const btn = await this.firstVisible(selectors.shareButton, 3000);
-    if (!btn) return false;
+    await this.revealControls();
+    const btn = await this.firstVisible(selectors.shareButton, 4000);
+    if (!btn) {
+      this.log.warn({}, "startMonitorShare: Share button not visible");
+      return false;
+    }
     await btn.click().catch(() => void 0);
-    await this.page.waitForTimeout(1500);
+    await this.page.waitForTimeout(1200);
     return true;
   }
 
@@ -422,7 +446,8 @@ export class ZoomWebAdapter {
 
   /** For assisted mode: click Zoom's Share button to open its picker, then hand off to the operator. */
   async openSharePicker(): Promise<boolean> {
-    const btn = await this.firstVisible(selectors.shareButton, 3000);
+    await this.revealControls();
+    const btn = await this.firstVisible(selectors.shareButton, 4000);
     if (!btn) return false;
     await btn.click().catch(() => void 0);
     return true;
