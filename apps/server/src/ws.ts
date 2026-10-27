@@ -17,9 +17,15 @@ export function registerWebSocket(app: FastifyInstance, ctx: AppContext): void {
     }
   };
 
-  // Broadcast every domain event to all connected clients.
+  // Broadcast every domain event to all connected clients, followed by a fresh
+  // snapshot so panels and the tablet reflect live state (timers, participants,
+  // raised hands) without waiting for a reconnect.
   ctx.bus.subscribe((event) => {
-    for (const socket of clients) send(socket, { kind: "event", event });
+    const snapshot = ctx.getSnapshot();
+    for (const socket of clients) {
+      send(socket, { kind: "event", event });
+      send(socket, { kind: "snapshot", snapshot });
+    }
   });
 
   // Heartbeat so clients can detect a dead connection.

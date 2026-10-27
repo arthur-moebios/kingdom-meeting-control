@@ -3,6 +3,7 @@ import type { CapabilityStatus } from "@kmc/shared-types";
 import { api } from "./api.js";
 import { useLiveState } from "./useLiveState.js";
 import { SettingsPanel } from "./SettingsPanel.js";
+import { MeetingPanel } from "./MeetingPanel.js";
 
 const STATE_LABEL: Record<string, string> = {
   STOPPED: "Parado",
@@ -31,6 +32,7 @@ export function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -62,6 +64,9 @@ export function App() {
           <div className="conn">
             <Dot on={connected} /> {connected ? "Painel conectado" : "Painel desconectado"}
           </div>
+          <button className={advanced ? "" : "secondary"} onClick={() => setAdvanced((v) => !v)}>
+            {advanced ? "Ocultar avançado" : "Avançado"}
+          </button>
           <button className="secondary" onClick={() => setShowSettings(true)}>⚙ Configurações</button>
         </div>
       </header>
@@ -77,6 +82,9 @@ export function App() {
       {error && <div className="card error">{error}</div>}
 
       <div className="grid">
+        {/* Cronômetros da reunião (WOL) */}
+        {s && <MeetingPanel meeting={s.meeting} warnSeconds={s.settings.meetingSchedule.warnSeconds} />}
+
         {/* Estado da reunião */}
         <section className="card">
           <h2>Estado da reunião</h2>
@@ -127,6 +135,7 @@ export function App() {
           {s && <p className="muted small">Ordem: {s.raisedHands.orderSource} (aproximada)</p>}
         </section>
 
+        {advanced && (<>
         {/* Participantes */}
         <section className="card">
           <h2>Participantes ({s?.participants.length ?? 0})</h2>
@@ -196,6 +205,7 @@ export function App() {
             <button disabled={!!busy} className="secondary" onClick={() => run("reconnect", async () => reconnect())}>Reconectar painel</button>
           </div>
         </section>
+        </>)}
       </div>
       <footer className="muted small">
         Fase 1 — fundação. Recursos marcados "experimental/assisted/unsupported" ainda dependem de

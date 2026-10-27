@@ -121,6 +121,52 @@ export const ShareModeSchema = z.enum(["manual", "assisted", "automatic"]);
 export type ShareMode = z.infer<typeof ShareModeSchema>;
 
 // ---------------------------------------------------------------------------
+// Meeting schedule + per-part timers
+//
+// Parts are extracted from wol.jw.org (midweek Vida e Ministério, or the two
+// weekend parts). Each part carries its own timer. The timer is stored as
+// base-elapsed + startedAt so clients compute the live value with no drift and
+// the server does not need to tick every second.
+// ---------------------------------------------------------------------------
+export const MeetingKindSchema = z.enum(["midweek", "weekend"]);
+export type MeetingKind = z.infer<typeof MeetingKindSchema>;
+
+export const MeetingPartSchema = z.object({
+  id: z.string(),
+  /** Section label as shown (e.g. "TESOUROS DA PALAVRA DE DEUS", "Início"). */
+  section: z.string(),
+  order: z.number().int(),
+  title: z.string(),
+  /** Allotted time in seconds (0 = untimed). Editable by the operator. */
+  allottedSec: z.number().int().nonnegative(),
+  // -- timer runtime --
+  running: z.boolean().default(false),
+  /** ISO time the current run started; null when paused/idle. */
+  startedAt: z.string().datetime().nullable().default(null),
+  /** Elapsed seconds accumulated before the current run. */
+  baseElapsedSec: z.number().nonnegative().default(0),
+  /** Where the part came from: parsed from WOL or added by the operator. */
+  source: z.enum(["wol", "manual"]).default("wol"),
+});
+export type MeetingPart = z.infer<typeof MeetingPartSchema>;
+
+export const MeetingScheduleSchema = z.object({
+  source: z.enum(["wol", "manual", "none"]).default("none"),
+  kind: MeetingKindSchema.nullable().default(null),
+  /** Human week label, e.g. "26 de outubro–1.º de novembro". */
+  weekLabel: z.string().default(""),
+  /** Meeting theme/title line (e.g. the Watchtower study title). */
+  title: z.string().default(""),
+  wolUrl: z.string().nullable().default(null),
+  fetchedAt: z.string().datetime().nullable().default(null),
+  activePartId: z.string().nullable().default(null),
+  parts: z.array(MeetingPartSchema).default([]),
+  loading: z.boolean().default(false),
+  error: z.string().nullable().default(null),
+});
+export type MeetingSchedule = z.infer<typeof MeetingScheduleSchema>;
+
+// ---------------------------------------------------------------------------
 // Settings (persisted)
 // ---------------------------------------------------------------------------
 export const SettingsSchema = z.object({
@@ -173,6 +219,19 @@ export const SettingsSchema = z.object({
       hidden: z.boolean().default(false),
     })
     .default({}),
+  meetingSchedule: z
+    .object({
+      /** Base URL for the WOL meetings page (language-specific). */
+      wolBase: z.string().default("https://wol.jw.org/pt/wol/meetings/r5/lp-t"),
+      /** Auto-detect and load the current week's meeting on startup. */
+      autoLoad: z.boolean().default(true),
+      /** Default minutes for the weekend parts (not timed on WOL). */
+      publicTalkMinutes: z.number().int().positive().default(30),
+      watchtowerMinutes: z.number().int().positive().default(60),
+      /** Seconds-remaining threshold where the timer turns amber. */
+      warnSeconds: z.number().int().nonnegative().default(60),
+    })
+    .default({}),
   retention: z
     .object({
       eventDays: z.number().int().positive().default(30),
@@ -202,6 +261,8 @@ export const EventTypeSchema = z.enum([
   "zoom.share.stopped",
   "presentation.started",
   "presentation.ended",
+  "meeting.loaded",
+  "meeting.updated",
   "system.warning",
   "system.error",
 ]);
@@ -226,6 +287,7 @@ export const SnapshotSchema = z.object({
   displays: z.array(DisplaySchema),
   presentation: PresentationStatusSchema,
   capabilities: CapabilitiesSchema,
+  meeting: MeetingScheduleSchema,
   settings: SettingsSchema,
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;

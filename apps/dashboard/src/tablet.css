@@ -51,3 +51,42 @@ body {
 .t-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 4vh; color: var(--muted); }
 .t-note { color: #fcd34d; font-size: 2.2vh; margin-top: 1vh; }
 .t-foot { text-align: center; color: var(--muted); font-size: 2vh; }
+
+/* ---- week label ---- */
+.t-week { flex: 1; text-align: center; font-size: 2.6vh; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2vw; }
+
+/* ---- active part: big countdown ---- */
+.t-active { background: var(--panel); border: 2px solid var(--border); border-radius: 2.4vh; padding: 2.4vh 3vw; text-align: center; flex-shrink: 0; }
+.t-active.ph-warn { border-color: #d97706; }
+.t-active.ph-over { border-color: #ef4444; }
+.t-active-sec { font-size: 2.2vh; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+.t-active-title { font-size: 3.6vh; font-weight: 700; margin: .4vh 0 .8vh; }
+.t-bigclock { font-size: 15vh; font-weight: 800; line-height: .95; font-variant-numeric: tabular-nums; color: var(--fg); }
+.t-active.ph-warn .t-bigclock { color: #fbbf24; }
+.t-active.ph-over .t-bigclock { color: #f87171; }
+.t-bar { height: 1.4vh; background: #0b1220; border-radius: 999px; overflow: hidden; margin-top: 1.2vh; }
+.t-barfill { height: 100%; background: var(--accent); transition: width .5s linear; }
+.t-active.ph-warn .t-barfill { background: #f59e0b; }
+.t-active.ph-over .t-barfill { background: #ef4444; }
+.t-paused { color: var(--muted); font-size: 2.4vh; margin-top: .6vh; text-transform: uppercase; letter-spacing: .1em; }
+
+/* ---- parts list ---- */
+.t-parts { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1vh; }
+.t-part { display: flex; align-items: center; justify-content: space-between; gap: 2vw; background: var(--panel); border: 1px solid var(--border); border-radius: 1.4vh; padding: 1.4vh 2.4vw; }
+.t-part.active { border-color: var(--accent); background: #0e2235; }
+.t-part-title { font-size: 2.8vh; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-part-rem { font-size: 3vh; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--muted); }
+.t-part.active .t-part-rem { color: var(--fg); }
+.t-part-rem.ph-warn { color: #fbbf24; }
+.t-part-rem.ph-over { color: #f87171; }
+
+/* raised hands becomes a compact strip at the bottom */
+.t-hands { flex: 0 0 auto; max-height: 30vh; }
+.t-hands h2 { font-size: 2.8vh; margin-bottom: 1vh; }
+.t-hands .t-name { font-size: 3.2vh; }
+.t-hands .t-pos { font-size: 3.4vh; }
+.t-hands .t-queue { gap: 1vh; }
+
+@media (orientation: landscape) {
+  .t-bigclock { font-size: 20vh; }
+}

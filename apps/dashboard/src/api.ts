@@ -32,7 +32,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return (await res.json()) as T;
 }
 
-import type { Settings, SettingsUpdate } from "@kmc/shared-types";
+import type { MeetingKind, MeetingSchedule, Settings, SettingsUpdate } from "@kmc/shared-types";
 
 export const api = {
   health: () => req<unknown>("GET", "/health"),
@@ -51,4 +51,19 @@ export const api = {
   logs: () => req<{ logs: { time: string; levelLabel: string; msg: string }[] }>("GET", "/system/logs?n=50"),
   getSettings: () => req<Settings>("GET", "/settings"),
   putSettings: (patch: SettingsUpdate) => req<Settings>("PUT", "/settings", patch),
+
+  // -- meeting schedule + timers --
+  meeting: () => req<MeetingSchedule>("GET", "/meeting"),
+  meetingLoad: (body: { url?: string; week?: string; kind?: MeetingKind }) =>
+    req<MeetingSchedule>("POST", "/meeting/load", body),
+  meetingActive: (partId: string) => req<MeetingSchedule>("POST", "/meeting/active", { partId }),
+  meetingStart: (id: string) => req<MeetingSchedule>("POST", `/meeting/part/${id}/start`),
+  meetingPause: (id: string) => req<MeetingSchedule>("POST", `/meeting/part/${id}/pause`),
+  meetingReset: (id: string) => req<MeetingSchedule>("POST", `/meeting/part/${id}/reset`),
+  meetingAdjust: (id: string, body: { elapsedSec?: number; allottedSec?: number; title?: string }) =>
+    req<MeetingSchedule>("PATCH", `/meeting/part/${id}`, body),
+  meetingAddPart: (body: { section?: string; title: string; minutes: number }) =>
+    req<MeetingSchedule>("POST", "/meeting/part", body),
+  meetingRemovePart: (id: string) => req<MeetingSchedule>("DELETE", `/meeting/part/${id}`),
+  meetingResetAll: () => req<MeetingSchedule>("POST", "/meeting/reset-all"),
 };

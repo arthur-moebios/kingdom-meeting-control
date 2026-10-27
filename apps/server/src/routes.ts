@@ -200,6 +200,56 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return { ok: true, message: "Stop requested; operator confirms in the browser/OS UI." };
   });
 
+  // -- meeting schedule + per-part timers -----------------------------------
+  app.get("/api/v1/meeting", viewer, async () => ctx.meeting.getState());
+
+  app.post("/api/v1/meeting/load", admin, async (req) => {
+    const b = (req.body ?? {}) as { url?: string; week?: string; kind?: "midweek" | "weekend" };
+    ctx.db.audit("admin", "meeting.load", { kind: b.kind ?? null, week: b.week ?? null });
+    return ctx.meeting.load({ url: b.url, week: b.week, kind: b.kind });
+  });
+
+  app.post("/api/v1/meeting/active", admin, async (req) => {
+    const { partId } = (req.body ?? {}) as { partId?: string };
+    return partId ? ctx.meeting.setActive(partId) : ctx.meeting.getState();
+  });
+
+  app.post("/api/v1/meeting/part/:id/start", admin, async (req) =>
+    ctx.meeting.start((req.params as { id: string }).id),
+  );
+  app.post("/api/v1/meeting/part/:id/pause", admin, async (req) =>
+    ctx.meeting.pause((req.params as { id: string }).id),
+  );
+  app.post("/api/v1/meeting/part/:id/reset", admin, async (req) =>
+    ctx.meeting.reset((req.params as { id: string }).id),
+  );
+
+  // Adjust a part: elapsed (forgot to start/reset), allotted time, or title.
+  app.patch("/api/v1/meeting/part/:id", admin, async (req) => {
+    const { id } = req.params as { id: string };
+    const b = (req.body ?? {}) as { elapsedSec?: number; allottedSec?: number; title?: string };
+    let st = ctx.meeting.getState();
+    if (typeof b.allottedSec === "number") st = ctx.meeting.setAllotted(id, b.allottedSec);
+    if (typeof b.title === "string") st = ctx.meeting.setTitle(id, b.title);
+    if (typeof b.elapsedSec === "number") st = ctx.meeting.setElapsed(id, b.elapsedSec);
+    return st;
+  });
+
+  app.post("/api/v1/meeting/part", admin, async (req, reply) => {
+    const b = (req.body ?? {}) as { section?: string; title?: string; minutes?: number };
+    if (!b.title || typeof b.minutes !== "number") {
+      await reply.code(400).send({ error: "invalid_part", message: "title e minutes são obrigatórios." });
+      return;
+    }
+    return ctx.meeting.addPart({ section: b.section, title: b.title, minutes: b.minutes });
+  });
+
+  app.delete("/api/v1/meeting/part/:id", admin, async (req) =>
+    ctx.meeting.removePart((req.params as { id: string }).id),
+  );
+
+  app.post("/api/v1/meeting/reset-all", admin, async () => ctx.meeting.resetAll());
+
   // -- settings --------------------------------------------------------------
   app.get("/api/v1/settings", viewer, async () => ctx.getSettings());
 

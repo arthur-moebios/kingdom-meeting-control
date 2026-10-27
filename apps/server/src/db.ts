@@ -40,7 +40,26 @@ export class Db {
         action TEXT NOT NULL,
         detail TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS kv (
+        k TEXT PRIMARY KEY,
+        v TEXT NOT NULL
+      );
     `);
+  }
+
+  // -- generic key/value (JSON) ---------------------------------------------
+
+  getKv(key: string): string | null {
+    const row = this.db.prepare("SELECT v FROM kv WHERE k = ?").get(key) as
+      | { v: string }
+      | undefined;
+    return row?.v ?? null;
+  }
+
+  setKv(key: string, value: string): void {
+    this.db
+      .prepare("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v")
+      .run(key, value);
   }
 
   // -- settings --------------------------------------------------------------

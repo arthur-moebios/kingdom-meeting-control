@@ -23,7 +23,8 @@
       "@kmc/config": ["packages/config/src/index.ts"],
       "@kmc/zoom-web-adapter": ["packages/zoom-web-adapter/src/index.ts"],
       "@kmc/zoom-automation": ["packages/zoom-automation/src/index.ts"],
-      "@kmc/presentation-monitor": ["packages/presentation-monitor/src/index.ts"]
+      "@kmc/presentation-monitor": ["packages/presentation-monitor/src/index.ts"],
+      "@kmc/meeting": ["packages/meeting/src/index.ts"]
     }
   }
 }

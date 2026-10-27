@@ -1,4 +1,6 @@
+import type { MeetingPart } from "@kmc/shared-types";
 import { useLiveState } from "./useLiveState.js";
+import { useClock, elapsedSec, fmtClock } from "./timer.js";
 
 const STATE_LABEL: Record<string, string> = {
   STOPPED: "Parado",
@@ -12,65 +14,103 @@ const STATE_LABEL: Record<string, string> = {
   ERROR: "Sem conexão",
 };
 
-/** Minutes:seconds since an ISO timestamp. */
-function since(iso: string | null): string {
-  if (!iso) return "";
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  const m = Math.floor(s / 60);
-  return m > 0 ? `${m}m${String(s % 60).padStart(2, "0")}s` : `${s}s`;
+function phase(remaining: number, allotted: number, warn: number): string {
+  if (allotted <= 0) return "idle";
+  if (remaining < 0) return "over";
+  if (remaining <= warn) return "warn";
+  return "ok";
 }
 
 /**
- * READ-ONLY view for the 10" tribune touchscreen. Consumes the viewer API/WS
- * only — it has no control actions (join/leave/share/settings are impossible
- * with a viewer token). Focused on the raised-hands queue, which is what the
- * person at the tribune needs to see.
+ * READ-ONLY tribune view (10" touchscreen). Shows the per-part timers extracted
+ * from wol.jw.org, with the current part's countdown big, plus the raised-hands
+ * queue. Controlled entirely from the operator's PC.
  */
 export function TabletView() {
   const { connected, snapshot } = useLiveState();
+  const meeting = snapshot?.meeting;
+  const anyRunning = !!meeting?.parts.some((p) => p.running);
+  const now = useClock(anyRunning);
+  const warn = snapshot?.settings.meetingSchedule.warnSeconds ?? 60;
 
   const status = snapshot?.status;
   const hands = snapshot?.raisedHands;
   const live = status?.state === "IN_MEETING" || status?.state === "SHARING";
+  const active: MeetingPart | null =
+    meeting?.parts.find((p) => p.id === meeting.activePartId) ?? null;
+
+  const activeRemaining = active ? active.allottedSec - elapsedSec(active, now) : 0;
+  const activePhase = active ? phase(activeRemaining, active.allottedSec, warn) : "idle";
+  const activePct =
+    active && active.allottedSec > 0
+      ? Math.min(100, (elapsedSec(active, now) / active.allottedSec) * 100)
+      : 0;
 
   return (
     <div className="t-wrap">
       <header className="t-top">
         <div className={`t-live ${live ? "on" : "off"}`}>
           <span className="t-dot" />
-          {status ? STATE_LABEL[status.state] ?? status.state : (connected ? "Aguardando" : "Conectando…")}
+          {status ? STATE_LABEL[status.state] ?? status.state : connected ? "Aguardando" : "Conectando…"}
         </div>
+        <div className="t-week">{meeting?.weekLabel || "—"}</div>
         <div className="t-count">
-          <strong>{status?.participantCount ?? 0}</strong> participantes
+          <strong>{status?.participantCount ?? 0}</strong> part.
         </div>
       </header>
 
-      <main className="t-hands">
-        <h2>
-          Mãos levantadas
-          {hands && hands.order.length > 0 && <span className="t-badge">{hands.order.length}</span>}
-        </h2>
+      {active ? (
+        <section className={`t-active ph-${activePhase}`}>
+          <div className="t-active-sec">{active.section}</div>
+          <div className="t-active-title">{active.title}</div>
+          <div className="t-bigclock">
+            {active.allottedSec > 0 ? fmtClock(activeRemaining) : fmtClock(elapsedSec(active, now))}
+          </div>
+          {active.allottedSec > 0 && (
+            <div className="t-bar">
+              <div className="t-barfill" style={{ width: `${activePct}%` }} />
+            </div>
+          )}
+          {!active.running && <div className="t-paused">pausado</div>}
+        </section>
+      ) : (
+        <section className="t-active idle">
+          <div className="t-active-title">{meeting?.loading ? "Carregando reunião…" : "Reunião não iniciada"}</div>
+        </section>
+      )}
 
-        {hands && hands.order.length > 0 ? (
+      {meeting && meeting.parts.length > 0 && (
+        <section className="t-parts">
+          {meeting.parts.map((p) => {
+            const el = elapsedSec(p, now);
+            const rem = p.allottedSec - el;
+            const ph = phase(rem, p.allottedSec, warn);
+            const isActive = p.id === meeting.activePartId;
+            return (
+              <div key={p.id} className={`t-part ${isActive ? "active" : ""} ph-${ph}`}>
+                <span className="t-part-title">{p.title}</span>
+                <span className={`t-part-rem ph-${ph}`}>
+                  {p.allottedSec > 0 ? fmtClock(rem) : fmtClock(el)}
+                </span>
+              </div>
+            );
+          })}
+        </section>
+      )}
+
+      {hands && hands.order.length > 0 && (
+        <section className="t-hands">
+          <h2>Mãos levantadas <span className="t-badge">{hands.order.length}</span></h2>
           <ol className="t-queue">
-            {hands.order.map((p, i) => (
+            {hands.order.slice(0, 5).map((p, i) => (
               <li key={p.id} className={i === 0 ? "t-first" : ""}>
                 <span className="t-pos">{i + 1}</span>
                 <span className="t-name">{p.displayName}</span>
-                <span className="t-time">{since(p.handRaisedAt)}</span>
               </li>
             ))}
           </ol>
-        ) : (
-          <div className="t-empty">Ninguém com a mão levantada</div>
-        )}
-
-        {hands?.partial && <p className="t-note">Lista parcial (reunião grande)</p>}
-      </main>
-
-      <footer className="t-foot">
-        {status?.meetingId ? `Reunião ${status.meetingId}` : "—"} · ordem aproximada por detecção
-      </footer>
+        </section>
+      )}
     </div>
   );
 }
