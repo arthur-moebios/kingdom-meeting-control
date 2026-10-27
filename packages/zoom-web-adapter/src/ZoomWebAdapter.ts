@@ -455,8 +455,12 @@ export class ZoomWebAdapter {
 
   /** Click Zoom's "Stop Share" to end an active share. */
   async stopScreenShareClick(): Promise<boolean> {
-    const btn = await this.firstVisible(selectors.stopShareButton, 3000);
-    if (!btn) return false;
+    await this.revealControls();
+    const btn = await this.firstVisible(selectors.stopShareButton, 4000);
+    if (!btn) {
+      this.log.warn({}, "stopScreenShareClick: Stop Share button not visible");
+      return false;
+    }
     await btn.click().catch(() => void 0);
     return true;
   }

@@ -124,16 +124,22 @@ export function App() {
                       : "Pronto para entrar."}
           </p>
           <div className="actions">
-            <button
-              className="big"
-              disabled={!!busy || status?.state === "INITIALIZING"}
-              onClick={() => run("join", () => api.join())}
-            >
-              ▶ Entrar na reunião
-            </button>
-            <button disabled={!!busy} className="secondary" onClick={() => run("leave", () => api.leave())}>
-              Sair
-            </button>
+            {status && (status.state === "IN_MEETING" || status.state === "SHARING") ? (
+              <>
+                <span className="inmeeting">✓ Na reunião</span>
+                <button disabled={!!busy} className="danger" onClick={() => run("leave", () => api.leave())}>
+                  Sair da reunião
+                </button>
+              </>
+            ) : (
+              <button
+                className="big"
+                disabled={!!busy || status?.state === "INITIALIZING"}
+                onClick={() => run("join", () => api.join())}
+              >
+                ▶ Entrar na reunião
+              </button>
+            )}
           </div>
         </section>
 
@@ -194,6 +200,35 @@ export function App() {
           {s && <p className="muted small">Ordem: {s.raisedHands.orderSource} (aproximada)</p>}
         </section>
 
+        {/* Participantes (lista + desmutar) */}
+        <section className="card">
+          <h2>Participantes ({s?.participants.length ?? 0})</h2>
+          {s && s.participants.length > 0 ? (
+            <ul className="handlist">
+              {s.participants.map((p) => (
+                <li key={p.id} className="handrow">
+                  <span>
+                    {p.handRaised ? "✋ " : ""}
+                    <strong>{p.displayName}</strong>
+                    {p.isHost ? <span className="muted small"> · host</span> : p.isCoHost ? <span className="muted small"> · co-host</span> : ""}
+                    {p.isMuted === true ? <span className="muted small"> · mudo</span> : p.isMuted === false ? <span className="muted small"> · com som</span> : ""}
+                  </span>
+                  {p.isMuted !== false && (
+                    <button
+                      className="small-btn"
+                      disabled={!!busy}
+                      title="Desmutar no Zoom"
+                      onClick={() => run("unmute", () => api.unmuteParticipant(p.displayName))}
+                    >
+                      🔊 Desmutar
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="muted">Nenhum participante detectado.</p>}
+        </section>
+
         {advanced && (<>
         {/* Estado detalhado */}
         <section className="card">
@@ -217,22 +252,6 @@ export function App() {
             <button disabled={!!busy} onClick={() => run("wait", () => api.waitLogin())}>Aguardar login</button>
             <button disabled={!!busy} onClick={() => run("admit", () => api.admitAll())}>Admitir todos</button>
           </div>
-        </section>
-
-        {/* Participantes */}
-        <section className="card">
-          <h2>Participantes ({s?.participants.length ?? 0})</h2>
-          {s && s.participants.length > 0 ? (
-            <ul className="plist">
-              {s.participants.map((p) => (
-                <li key={p.id}>
-                  {p.handRaised ? "✋ " : ""}
-                  {p.displayName}
-                  {p.isHost ? " (host)" : p.isCoHost ? " (co-host)" : ""}
-                </li>
-              ))}
-            </ul>
-          ) : <p className="muted">Nenhum participante detectado.</p>}
         </section>
 
         {/* Compartilhamento */}

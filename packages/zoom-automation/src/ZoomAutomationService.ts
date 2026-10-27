@@ -52,6 +52,7 @@ export class ZoomAutomationService {
   private sharing = false;
   private lastError: string | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
+  private autoStopTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly deps: ZoomAutomationDeps) {
     const s0 = deps.getSettings();
@@ -429,10 +430,28 @@ export class ZoomAutomationService {
     const s = this.deps.getSettings();
     if (s.share.mode !== "automatic") return;
     if (this.sm.state !== "IN_MEETING" && this.sm.state !== "SHARING") return;
-    // Start on activity; do NOT auto-stop (avoids black screens mid-sequence).
-    if (active && !this.sharing) {
-      this.deps.log.info({}, "Auto-share: presentation active → starting monitor share");
-      await this.startMonitorShare();
+
+    if (active) {
+      // Media is showing: cancel any pending stop and start sharing.
+      if (this.autoStopTimer) {
+        clearTimeout(this.autoStopTimer);
+        this.autoStopTimer = null;
+      }
+      if (!this.sharing) {
+        this.deps.log.info({}, "Auto-share: presentation active → starting monitor share");
+        await this.startMonitorShare();
+      }
+    } else if (this.sharing && !this.autoStopTimer) {
+      // Media removed: stop sharing, but DEBOUNCE so a brief dark frame in a
+      // video doesn't end the share mid-sequence.
+      this.autoStopTimer = setTimeout(() => {
+        this.autoStopTimer = null;
+        if (!this.deps.isPresentationActive() && this.sharing) {
+          this.deps.log.info({}, "Auto-stop: presentation ended → stopping share");
+          void this.stopMonitorShare();
+        }
+      }, 4000);
+      this.autoStopTimer.unref();
     }
   }
 }
