@@ -34,11 +34,17 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [advanced, setAdvanced] = useState(false);
 
+  const [net, setNet] = useState<{ addresses: string[]; port: number; tabletUrls: string[] } | null>(null);
+
   useEffect(() => {
     const id = setInterval(() => {
       api.logs().then((r) => setLogs(r.logs)).catch(() => void 0);
     }, 4000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    api.net().then(setNet).catch(() => void 0);
   }, []);
 
   const run = async (name: string, fn: () => Promise<unknown>) => {
@@ -91,20 +97,57 @@ export function App() {
           <p className="muted">
             {!status
               ? "Conectando…"
-              : !status.authenticated
-                ? "Faça login no Zoom na janela do Chromium (uma vez)."
-                : status.state === "IN_MEETING" || status.state === "SHARING"
-                  ? "Na reunião."
-                  : "Pronto para entrar."}
+              : status.state === "INITIALIZING"
+                ? "Iniciando o navegador… aguarde alguns segundos."
+                : status.state === "RECONNECTING"
+                  ? "Reconectando…"
+                  : !status.authenticated
+                    ? "Faça login no Zoom na janela do Chromium (uma vez)."
+                    : status.state === "IN_MEETING" || status.state === "SHARING"
+                      ? "Na reunião."
+                      : "Pronto para entrar."}
           </p>
           <div className="actions">
-            <button className="big" disabled={!!busy} onClick={() => run("join", () => api.join())}>
+            <button
+              className="big"
+              disabled={!!busy || status?.state === "INITIALIZING"}
+              onClick={() => run("join", () => api.join())}
+            >
               ▶ Entrar na reunião
             </button>
             <button disabled={!!busy} className="secondary" onClick={() => run("leave", () => api.leave())}>
               Sair
             </button>
           </div>
+        </section>
+
+        {/* Anúncios (enviados ao tablet) */}
+        {s && (
+          <AnnouncementsEditor
+            value={s.settings.tablet.announcements}
+            busy={!!busy}
+            onSave={(text) => run("ann", () => api.putSettings({ tablet: { announcements: text } }))}
+          />
+        )}
+
+        {/* Tablet / rede */}
+        <section className="card">
+          <h2>Tablet (tribuna)</h2>
+          {net && net.addresses.length > 0 ? (
+            <>
+              <p className="muted small">No app do tablet, toque na engrenagem e informe o IP do PC:</p>
+              <ul className="plist">
+                {net.addresses.map((ip) => (
+                  <li key={ip}><strong>{ip}</strong> : {net.port}</li>
+                ))}
+              </ul>
+              {net.tabletUrls[0] && (
+                <p className="muted small">Ou abra no navegador do tablet: {net.tabletUrls[0]}</p>
+              )}
+            </>
+          ) : (
+            <p className="muted">Descobrindo endereços da rede…</p>
+          )}
         </section>
 
         {/* Mãos levantadas */}
@@ -226,5 +269,38 @@ export function App() {
         validação com reunião real. Veja docs/limitations.md.
       </footer>
     </div>
+  );
+}
+
+function AnnouncementsEditor({
+  value,
+  busy,
+  onSave,
+}: {
+  value: string;
+  busy: boolean;
+  onSave: (text: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  const [dirty, setDirty] = useState(false);
+  // Keep in sync with the server value until the operator starts editing.
+  useEffect(() => {
+    if (!dirty) setText(value);
+  }, [value, dirty]);
+  return (
+    <section className="card wide">
+      <h2>Anúncios (enviados ao tablet)</h2>
+      <textarea
+        className="annedit"
+        value={text}
+        rows={5}
+        placeholder="Escreva os anúncios da reunião…"
+        onChange={(e) => { setText(e.target.value); setDirty(true); }}
+      />
+      <div className="actions">
+        <button disabled={busy} onClick={() => { onSave(text); setDirty(false); }}>Salvar e enviar</button>
+        {dirty && <span className="muted small">alterações não salvas</span>}
+      </div>
+    </section>
   );
 }

@@ -219,6 +219,12 @@ export const SettingsSchema = z.object({
       hidden: z.boolean().default(false),
     })
     .default({}),
+  tablet: z
+    .object({
+      /** Free-text announcements shown big on the tribune tablet. */
+      announcements: z.string().default(""),
+    })
+    .default({}),
   meetingSchedule: z
     .object({
       /** Base URL for the WOL meetings page (language-specific). */

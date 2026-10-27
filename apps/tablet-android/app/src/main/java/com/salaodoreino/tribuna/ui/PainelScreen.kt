@@ -69,7 +69,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun PainelScreen(state: UiState, onDismiss: (String) -> Unit, onSetToken: (String) -> Unit) {
+fun PainelScreen(state: UiState, onDismiss: (String) -> Unit, onSetToken: (String) -> Unit, onSetHost: (String) -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
     // Single live clock drives every countdown (the server owns the real timers).
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -82,10 +82,10 @@ fun PainelScreen(state: UiState, onDismiss: (String) -> Unit, onSetToken: (Strin
     var fontScale by remember { mutableFloatStateOf(1f) }
     var showSettings by remember { mutableStateOf(false) }
 
-    val smaller = { fontScale = (fontScale - 0.1f).coerceAtLeast(0.8f) }
-    val bigger = { fontScale = (fontScale + 0.1f).coerceAtMost(1.6f) }
+    val smaller = { fontScale = (fontScale - 0.1f).coerceAtLeast(0.4f) }
+    val bigger = { fontScale = (fontScale + 0.1f).coerceAtMost(2f) }
 
-    if (showSettings) TokenDialog(onSetToken) { showSettings = false }
+    if (showSettings) ConnectDialog(state.manualHost, onSetHost, onSetToken) { showSettings = false }
 
     Scaffold(
         containerColor = C.bg,
@@ -97,7 +97,7 @@ fun PainelScreen(state: UiState, onDismiss: (String) -> Unit, onSetToken: (Strin
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 when (selectedTab) {
                     0 -> Dashboard(state, nowMs, fontScale, smaller, bigger, onDismiss)
-                    1 -> AnnouncementsCard(fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.fillMaxSize())
+                    1 -> AnnouncementsCard(state.announcements, fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.fillMaxSize())
                     2 -> CronometroTab(state, nowMs)
                     3 -> ParticipantsTab(state, onDismiss)
                     else -> MaisTab(state) { showSettings = true }
@@ -125,7 +125,7 @@ private fun Dashboard(
                 }
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     HandsCard(state.hands, state.partial, innerScroll = true, modifier = Modifier.weight(1f), onDismiss = onDismiss)
-                    AnnouncementsCard(fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.weight(1f))
+                    AnnouncementsCard(state.announcements, fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.weight(1f))
                 }
             }
         } else {
@@ -133,7 +133,7 @@ private fun Dashboard(
                 ActiveTimerCard(active, state.weekLabel, nowMs)
                 PartsCard(state.parts, nowMs, innerScroll = false)
                 HandsCard(state.hands, state.partial, innerScroll = false, onDismiss = onDismiss)
-                AnnouncementsCard(fontScale, smaller, bigger, innerScroll = false)
+                AnnouncementsCard(state.announcements, fontScale, smaller, bigger, innerScroll = false)
             }
         }
     }
@@ -168,10 +168,11 @@ private fun MaisTab(state: UiState, onOpenSettings: () -> Unit) {
             CardTitle(Icons.Filled.Settings, "Configuração")
             Spacer(Modifier.height(10.dp))
             InfoRow("Conexão", connLabel(state))
+            InfoRow("Descoberta", if (state.manualHost.isBlank()) "Automática" else "Manual")
             InfoRow("Salão (host)", state.host ?: "—")
             InfoRow("Versão", "0.1.0")
             Spacer(Modifier.height(12.dp))
-            PillButton("Configurar token", Icons.Filled.Settings, C.blue, Color.White, onOpenSettings)
+            PillButton("Conexão (avançado)", Icons.Filled.Settings, C.blue, Color.White, onOpenSettings)
         }
     }
 }
@@ -192,19 +193,41 @@ private fun connLabel(state: UiState): String = when (state.conn) {
 }
 
 @Composable
-private fun TokenDialog(onSetToken: (String) -> Unit, onClose: () -> Unit) {
-    var t by remember { mutableStateOf("") }
+private fun ConnectDialog(
+    currentHost: String,
+    onSetHost: (String) -> Unit,
+    onSetToken: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    var host by remember { mutableStateOf(currentHost) }
+    var tok by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text("Configuração") },
+        title = { Text("Conexão com o Salão") },
         text = {
             Column {
-                Text("Token de visualização (viewer) do Salão:", color = C.muted)
+                Text(
+                    "A conexão é automática na mesma rede Wi-Fi. Preencha abaixo só se a busca automática falhar.",
+                    color = C.muted, fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text("IP do PC (ex. 192.168.0.10)", color = C.muted, fontSize = 12.sp)
+                OutlinedTextField(
+                    value = host, onValueChange = { host = it }, singleLine = true,
+                    placeholder = { Text("vazio = automático") },
+                )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(value = t, onValueChange = { t = it }, singleLine = true)
+                Text("Token (opcional)", color = C.muted, fontSize = 12.sp)
+                OutlinedTextField(value = tok, onValueChange = { tok = it }, singleLine = true)
             }
         },
-        confirmButton = { TextButton(onClick = { onSetToken(t); onClose() }) { Text("Salvar") } },
+        confirmButton = {
+            TextButton(onClick = {
+                onSetHost(host)
+                if (tok.isNotBlank()) onSetToken(tok)
+                onClose()
+            }) { Text("Salvar") }
+        },
         dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } },
     )
 }
@@ -460,7 +483,7 @@ private fun HandRow(h: HandUi, onDismiss: (String) -> Unit) {
 }
 
 @Composable
-private fun AnnouncementsCard(fontScale: Float, onSmaller: () -> Unit, onBigger: () -> Unit, innerScroll: Boolean, modifier: Modifier = Modifier) {
+private fun AnnouncementsCard(text: String, fontScale: Float, onSmaller: () -> Unit, onBigger: () -> Unit, innerScroll: Boolean, modifier: Modifier = Modifier) {
     SectionCard(modifier.fillMaxWidth()) {
         CardTitle(Icons.Filled.Campaign, "Anúncios da reunião") {
             Row {
@@ -472,7 +495,13 @@ private fun AnnouncementsCard(fontScale: Float, onSmaller: () -> Unit, onBigger:
         Spacer(Modifier.height(12.dp))
         val textMod = if (innerScroll) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier
         Box(modifier = textMod) {
-            Text(Sample.announcements, color = C.fg, fontSize = (16 * fontScale).sp, lineHeight = (24 * fontScale).sp)
+            // Default font is large (tribune readability); A-/A+ adjust from here.
+            Text(
+                text.ifBlank { "Sem anúncios." },
+                color = C.fg,
+                fontSize = (80 * fontScale).sp,
+                lineHeight = (96 * fontScale).sp,
+            )
         }
     }
 }

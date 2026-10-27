@@ -169,8 +169,8 @@ function ActivePart({
       )}
       <div className="m-active-ctl">
         {part.running ? (
-          <button className="danger" disabled={busy} onClick={() => run(() => api.meetingPause(part.id))}>
-            ❚❚ Pausar
+          <button className="danger" disabled={busy} onClick={() => run(() => api.meetingPauseNext(part.id))}>
+            ❚❚ Pausar e próxima
           </button>
         ) : (
           <button disabled={busy} onClick={() => run(() => api.meetingStart(part.id))}>▶ Iniciar</button>

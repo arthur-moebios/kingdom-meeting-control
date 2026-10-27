@@ -51,6 +51,7 @@ export const api = {
   logs: () => req<{ logs: { time: string; levelLabel: string; msg: string }[] }>("GET", "/system/logs?n=50"),
   getSettings: () => req<Settings>("GET", "/settings"),
   putSettings: (patch: SettingsUpdate) => req<Settings>("PUT", "/settings", patch),
+  net: () => req<{ addresses: string[]; port: number; panelUrls: string[]; tabletUrls: string[] }>("GET", "/net"),
 
   // -- meeting schedule + timers --
   meeting: () => req<MeetingSchedule>("GET", "/meeting"),
@@ -59,6 +60,7 @@ export const api = {
   meetingActive: (partId: string) => req<MeetingSchedule>("POST", "/meeting/active", { partId }),
   meetingStart: (id: string) => req<MeetingSchedule>("POST", `/meeting/part/${id}/start`),
   meetingPause: (id: string) => req<MeetingSchedule>("POST", `/meeting/part/${id}/pause`),
+  meetingPauseNext: (id: string) => req<MeetingSchedule>("POST", `/meeting/part/${id}/pause-next`),
   meetingReset: (id: string) => req<MeetingSchedule>("POST", `/meeting/part/${id}/reset`),
   meetingAdjust: (id: string, body: { elapsedSec?: number; allottedSec?: number; title?: string }) =>
     req<MeetingSchedule>("PATCH", `/meeting/part/${id}`, body),

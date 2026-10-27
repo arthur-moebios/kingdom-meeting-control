@@ -200,6 +200,16 @@ export class MeetingService {
     return this.changed();
   }
 
+  /** Pause the part and make the NEXT part active (fast meeting flow). */
+  pauseAndAdvance(id: string): MeetingSchedule {
+    const p = this.part(id);
+    if (p) this.accrue(p);
+    const idx = this.state.parts.findIndex((x) => x.id === id);
+    const next = idx >= 0 ? this.state.parts[idx + 1] : undefined;
+    if (next) this.state.activePartId = next.id;
+    return this.changed();
+  }
+
   reset(id: string): MeetingSchedule {
     const p = this.part(id);
     if (p) {

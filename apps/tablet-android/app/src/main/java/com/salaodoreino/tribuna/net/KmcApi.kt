@@ -1,6 +1,7 @@
 package com.salaodoreino.tribuna.net
 
 import com.salaodoreino.tribuna.model.AppJson
+import com.salaodoreino.tribuna.model.AppSettings
 import com.salaodoreino.tribuna.model.MeetingSchedule
 import com.salaodoreino.tribuna.model.RaisedHands
 import com.salaodoreino.tribuna.model.ZoomStatus
@@ -44,6 +45,11 @@ class KmcApi(private val baseUrl: String, private val token: String) {
 
     suspend fun meeting(): MeetingSchedule? = withContext(Dispatchers.IO) {
         runCatching { getBody("/meeting")?.let { AppJson.decodeFromString<MeetingSchedule>(it) } }
+            .getOrNull()
+    }
+
+    suspend fun settings(): AppSettings? = withContext(Dispatchers.IO) {
+        runCatching { getBody("/settings")?.let { AppJson.decodeFromString<AppSettings>(it) } }
             .getOrNull()
     }
 }

@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { loadConfig, repoRoot } from "@kmc/config";
 import { createLogger } from "./logger.js";
 import { AppContext } from "./context.js";
 import { buildApp } from "./app.js";
 import { DiscoveryService } from "./discovery.js";
+import { BeaconService } from "./beacon.js";
 
 const VERSION = "0.1.0";
 
@@ -51,6 +53,15 @@ async function main(): Promise<void> {
   const discovery = new DiscoveryService(logger, { port: cfg.port, version: VERSION });
   discovery.start();
 
+  // DHCP-proof zero-config discovery via UDP broadcast (primary; survives IP
+  // changes and works where mDNS multicast is filtered by the router).
+  const beacon = new BeaconService(logger, {
+    apiPort: cfg.port,
+    name: `Kingdom Meeting Control @ ${os.hostname()}`,
+    version: VERSION,
+  });
+  beacon.start();
+
   // Kick off browser launch / monitoring AFTER the server is accepting requests,
   // so the dashboard can connect and watch the real state as it comes up.
   void ctx.bootstrap();
@@ -59,6 +70,7 @@ async function main(): Promise<void> {
     logger.info({ signal }, "Shutting down");
     try {
       await discovery.stop();
+      await beacon.stop();
       await app.close();
       await ctx.shutdown();
     } finally {

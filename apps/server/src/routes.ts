@@ -1,3 +1,4 @@
+import os from "node:os";
 import type { FastifyInstance } from "fastify";
 import {
   SettingsSchema,
@@ -47,6 +48,24 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     requiresToken: true,
     roles: ["admin", "viewer"],
   }));
+
+  // -- network (no auth) — the PC's LAN addresses, so the operator can type the
+  //    IP into the tablet when mDNS discovery is blocked by the Wi-Fi router. ---
+  app.get("/api/v1/net", async () => {
+    const addresses: string[] = [];
+    for (const iface of Object.values(os.networkInterfaces())) {
+      for (const a of iface ?? []) {
+        if (a.family === "IPv4" && !a.internal) addresses.push(a.address);
+      }
+    }
+    const port = ctx.cfg.port;
+    return {
+      addresses,
+      port,
+      panelUrls: addresses.map((ip) => `http://${ip}:${port}/`),
+      tabletUrls: addresses.map((ip) => `http://${ip}:${port}/tablet.html`),
+    };
+  });
 
   // -- system ----------------------------------------------------------------
   app.get("/api/v1/system", viewer, async (): Promise<SystemInfo> => {
@@ -219,6 +238,9 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   );
   app.post("/api/v1/meeting/part/:id/pause", admin, async (req) =>
     ctx.meeting.pause((req.params as { id: string }).id),
+  );
+  app.post("/api/v1/meeting/part/:id/pause-next", admin, async (req) =>
+    ctx.meeting.pauseAndAdvance((req.params as { id: string }).id),
   );
   app.post("/api/v1/meeting/part/:id/reset", admin, async (req) =>
     ctx.meeting.reset((req.params as { id: string }).id),

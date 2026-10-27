@@ -42,16 +42,24 @@ data class UiState(
     val host: String? = null,
     val weekLabel: String = "",
     val parts: List<PartUi> = emptyList(),
+    val announcements: String = "",
+    /** Manually-configured PC address (IP[:port]); empty = use NSD discovery. */
+    val manualHost: String = "",
 )
 
 /** Token storage (viewer, read-only) in SharedPreferences. */
 object Prefs {
     private const val FILE = "kmc"
     private const val KEY_TOKEN = "viewer_token"
+    private const val KEY_HOST = "manual_host"
     fun token(c: Context): String =
         c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_TOKEN, "") ?: ""
     fun setToken(c: Context, t: String) =
         c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(KEY_TOKEN, t).apply()
+    fun host(c: Context): String =
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_HOST, "") ?: ""
+    fun setHost(c: Context, h: String) =
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(KEY_HOST, h).apply()
 }
 
 /**
@@ -60,16 +68,22 @@ object Prefs {
  * control Zoom from here).
  */
 class TribunaViewModel(app: Application) : AndroidViewModel(app) {
-    private val _state = MutableStateFlow(UiState())
-    val state: StateFlow<UiState> = _state.asStateFlow()
-
     @Volatile private var token: String = Prefs.token(app)
-    @Volatile private var endpoint: Endpoint? = null
+    @Volatile private var manualHost: String = Prefs.host(app)
+    @Volatile private var beaconEndpoint: Endpoint? = null
+    @Volatile private var nsdEndpoint: Endpoint? = null
     private val dismissed = mutableSetOf<String>()
 
+    private val _state = MutableStateFlow(UiState(manualHost = manualHost))
+    val state: StateFlow<UiState> = _state.asStateFlow()
+
     init {
+        // Primary: DHCP-proof UDP beacon. Secondary: mDNS/NSD. Manual IP overrides.
         viewModelScope.launch {
-            discoverKmc(getApplication()).collect { endpoint = it }
+            discoverKmcBeacon(getApplication()).collect { beaconEndpoint = it }
+        }
+        viewModelScope.launch {
+            discoverKmc(getApplication()).collect { nsdEndpoint = it }
         }
         viewModelScope.launch {
             while (isActive) {
@@ -84,13 +98,29 @@ class TribunaViewModel(app: Application) : AndroidViewModel(app) {
         Prefs.setToken(getApplication(), token)
     }
 
+    fun setHost(h: String) {
+        manualHost = h.trim()
+        Prefs.setHost(getApplication(), manualHost)
+        _state.update { it.copy(manualHost = manualHost) }
+    }
+
+    /** Manual endpoint from "ip" or "ip:port"; null when not configured. */
+    private fun manualEndpoint(): Endpoint? {
+        val h = manualHost.trim()
+        if (h.isBlank()) return null
+        val parts = h.split(":")
+        val host = parts[0].trim()
+        val port = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 4317
+        return if (host.isNotBlank()) Endpoint(host, port) else null
+    }
+
     fun dismiss(id: String) {
         dismissed.add(id)
         _state.update { s -> s.copy(hands = s.hands.filter { it.id != id }) }
     }
 
     private suspend fun tick() {
-        val ep = endpoint
+        val ep = manualEndpoint() ?: beaconEndpoint ?: nsdEndpoint
         if (ep == null) {
             _state.update { it.copy(conn = Conn.SEARCHING) }
             return
@@ -105,6 +135,7 @@ class TribunaViewModel(app: Application) : AndroidViewModel(app) {
         }
         val hands = api.raisedHands()
         val meeting = api.meeting()
+        val settings = api.settings()
         val live = status.state == "IN_MEETING" || status.state == "SHARING"
         val handUi = (hands?.order ?: emptyList())
             .filter { it.id !in dismissed }
@@ -131,6 +162,8 @@ class TribunaViewModel(app: Application) : AndroidViewModel(app) {
             host = ep.host,
             weekLabel = meeting?.weekLabel ?: "",
             parts = parts,
+            announcements = settings?.tablet?.announcements ?: "",
+            manualHost = manualHost,
         )
     }
 

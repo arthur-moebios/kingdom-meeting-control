@@ -131,9 +131,17 @@ export class ZoomAutomationService {
 
   /** Join the meeting from current settings. Distinct from host-start. */
   async join(): Promise<void> {
+    // Startup probe (launch + auth check) can take ~20s. If the operator taps
+    // "Entrar" during that window, wait for it to settle instead of failing.
+    const deadline = Date.now() + 30_000;
+    while (this.sm.state === "INITIALIZING" && Date.now() < deadline) {
+      await sleep(400);
+    }
     if (!this.adapter) throw new Error("Not initialized");
     const s = this.deps.getSettings();
     if (!s.meeting.meetingId) throw new Error("No meetingId configured");
+    // Already in the meeting (e.g. autoJoin got there first) — nothing to do.
+    if (this.sm.state === "IN_MEETING" || this.sm.state === "SHARING") return;
 
     if (s.meeting.joinMode === "start") {
       // Explicitly refuse the unproven host-start path rather than fake it.

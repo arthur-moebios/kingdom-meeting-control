@@ -55,6 +55,13 @@ data class MeetingPart(
 )
 
 @Serializable
+data class TabletCfg(val announcements: String = "")
+
+/** Only the fields the tablet needs from the backend's settings. */
+@Serializable
+data class AppSettings(val tablet: TabletCfg = TabletCfg())
+
+@Serializable
 data class MeetingSchedule(
     val source: String = "none",
     val kind: String? = null,

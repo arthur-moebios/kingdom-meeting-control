@@ -54,7 +54,15 @@ export class ChromiumManager {
     fs.mkdirSync(this.opts.profileDir, { recursive: true });
     this.log.info({ profileDir: this.opts.profileDir, headless: this.opts.headless }, "Launching persistent Chromium");
 
-    const args = ["--start-maximized"];
+    const args = [
+      "--start-maximized",
+      // Keep the renderer fully alive even when the window is moved off-screen
+      // (our "hide"), so DOM scraping (participants/hands) keeps working.
+      "--disable-features=CalculateNativeWinOcclusion",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-renderer-backgrounding",
+      "--disable-background-timer-throttling",
+    ];
     if (this.opts.captureSourceTitle) {
       // Experimental auto-share: pick the matching screen without the OS picker.
       args.push(
@@ -95,40 +103,31 @@ export class ChromiumManager {
   }
 
   /**
-   * Show/hide the window at runtime via CDP.
+   * Show/hide the window at runtime via CDP by moving it OFF-SCREEN (not
+   * minimized, not headless) so the page keeps rendering and DOM scraping +
+   * screen capture keep working, while the operator does not see it.
    *
-   * "Hidden" MINIMIZES the window — reliable and it never steals focus. (Moving
-   * the window off-screen does not work when it launched maximized: Chrome
-   * ignores the position and just refocuses it, so the window appeared to pop to
-   * the foreground instead of hiding.) Minimized keeps the media/WebRTC session
-   * alive, so an in-progress screen share of the projector keeps working.
-   *
-   * NOTE: a minimized window still has a taskbar button. The meeting itself is
-   * controlled from the dashboard, so the operator never needs this window.
+   * CRUCIAL: you cannot change a window's position while it is maximized —
+   * Chrome ignores the new bounds and just refocuses the window (which looked
+   * like "hide brings it to the foreground"). So we ALWAYS restore it to the
+   * "normal" state in its own call first, then move it.
    */
   async setHidden(hidden: boolean): Promise<void> {
     if (!this.context || !this.page) return;
     try {
       const cdp = await this.context.newCDPSession(this.page);
       const info = (await cdp.send("Browser.getWindowForTarget")) as { windowId: number };
-      if (hidden) {
-        await cdp.send("Browser.setWindowBounds", {
-          windowId: info.windowId,
-          bounds: { windowState: "minimized" },
-        });
-      } else {
-        // Restore to a normal state first (you cannot change position while
-        // minimized/maximized), then bring it on-screen and to the front.
-        await cdp.send("Browser.setWindowBounds", {
-          windowId: info.windowId,
-          bounds: { windowState: "normal" },
-        });
-        await cdp.send("Browser.setWindowBounds", {
-          windowId: info.windowId,
-          bounds: { left: 60, top: 60, width: 1280, height: 800 },
-        });
-        await this.page.bringToFront().catch(() => void 0);
-      }
+      // 1) Un-maximize / un-minimize FIRST (separate call), or the move is ignored.
+      await cdp.send("Browser.setWindowBounds", {
+        windowId: info.windowId,
+        bounds: { windowState: "normal" },
+      });
+      // 2) Move far off every monitor to hide, or back on-screen to show.
+      const bounds = hidden
+        ? { left: -32000, top: -32000, width: 1280, height: 800 }
+        : { left: 60, top: 60, width: 1280, height: 800 };
+      await cdp.send("Browser.setWindowBounds", { windowId: info.windowId, bounds });
+      if (!hidden) await this.page.bringToFront().catch(() => void 0);
       await cdp.detach().catch(() => void 0);
       this.log.info({ hidden }, "Chromium window visibility set");
     } catch (err) {
