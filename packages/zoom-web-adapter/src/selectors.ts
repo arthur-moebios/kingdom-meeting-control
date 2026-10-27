@@ -165,6 +165,24 @@ export const selectors = {
       'text=/se desmutar/i',
     ],
   },
+  /** Per-row unmute / ask-to-unmute action (revealed on hover). EN + PT. */
+  rowUnmuteButton: {
+    description: "Unmute / ask-to-unmute a participant in their row (EN + PT)",
+    candidates: [
+      'button[aria-label*="unmute" i]',
+      'button:has-text("Unmute")',
+      'button:has-text("Ask to Unmute")',
+      'button[aria-label*="ativar o som" i]',
+      'button[aria-label*="pedir para ativar" i]',
+      'button:has-text("Ativar o som")',
+      'button:has-text("Pedir para ativar")',
+    ],
+  },
+  /** Per-row "More" menu button (EN + PT). */
+  rowMoreButton: {
+    description: "Per-row More/options menu button (EN + PT)",
+    candidates: ['button[aria-label*="more" i]', 'button[aria-label*="Mais" i]'],
+  },
   leaveButton: {
     description: "Leave/End meeting button (EN + PT)",
     candidates: [

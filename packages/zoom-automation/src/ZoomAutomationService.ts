@@ -366,6 +366,13 @@ export class ZoomAutomationService {
     return (await this.adapter?.setAllowUnmuteSelf(!lock).catch(() => false)) ?? false;
   }
 
+  /** Unmute (or ask to unmute) a participant by display name. */
+  async unmuteParticipant(name: string): Promise<boolean> {
+    const ok = (await this.adapter?.unmuteParticipant(name).catch(() => false)) ?? false;
+    this.deps.log.info({ name, ok }, "Unmute participant requested");
+    return ok;
+  }
+
   /** Show/hide the Chromium window (off-screen when hidden). */
   async setBrowserHidden(hidden: boolean): Promise<void> {
     await this.chromium.setHidden(hidden);

@@ -41,6 +41,9 @@ button.danger { background: #ef4444; color: #fff; }
 .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
 .actions button.big { font-size: 17px; padding: 14px 26px; }
 .annedit { width: 100%; background: #0b1220; border: 1px solid var(--border); color: var(--fg); border-radius: 8px; padding: 10px; font-size: 14px; font-family: inherit; resize: vertical; }
+.handlist { list-style: none; padding-left: 0; display: flex; flex-direction: column; gap: 6px; }
+.handrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--cardAlt); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+.small-btn { padding: 5px 10px; font-size: 12px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
 td:first-child { color: var(--muted); width: 45%; }

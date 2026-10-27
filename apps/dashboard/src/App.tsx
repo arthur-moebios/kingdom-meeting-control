@@ -170,13 +170,23 @@ export function App() {
         <section className="card">
           <h2>Mãos levantadas {s?.raisedHands.partial && <span className="pill">lista parcial</span>}</h2>
           {s && s.raisedHands.order.length > 0 ? (
-            <ol>
+            <ol className="handlist">
               {s.raisedHands.order.map((p, i) => (
-                <li key={p.id}>
-                  <strong>{i + 1}.</strong> {p.displayName}{" "}
-                  <span className="muted small">
-                    {p.handRaisedAt ? new Date(p.handRaisedAt).toLocaleTimeString() : ""}
+                <li key={p.id} className="handrow">
+                  <span>
+                    <strong>{i + 1}.</strong> {p.displayName}{" "}
+                    <span className="muted small">
+                      {p.handRaisedAt ? new Date(p.handRaisedAt).toLocaleTimeString() : ""}
+                    </span>
                   </span>
+                  <button
+                    className="small-btn"
+                    disabled={!!busy}
+                    title="Desmutar esta pessoa no Zoom"
+                    onClick={() => run("unmute", () => api.unmuteParticipant(p.displayName))}
+                  >
+                    🔊 Desmutar
+                  </button>
                 </li>
               ))}
             </ol>

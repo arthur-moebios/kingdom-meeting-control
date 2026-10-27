@@ -210,6 +210,59 @@ export class ZoomWebAdapter {
     return true;
   }
 
+  /**
+   * Unmute (or ask to unmute) a specific participant by display name. Opens the
+   * participants panel, finds the row, hovers to reveal its actions, then clicks
+   * the row's unmute button — falling back to the row's "More" menu. As host,
+   * Zoom may unmute directly or send an "ask to unmute" request, depending on
+   * the participant's consent settings. Returns true if an action was clicked.
+   */
+  async unmuteParticipant(name: string): Promise<boolean> {
+    if (!name || !(await this.isInMeeting())) return false;
+    if (!(await this.openParticipantsPanel())) return false;
+
+    const row = this.page.locator(".participants-li", { hasText: name }).first();
+    if ((await row.count().catch(() => 0)) === 0) {
+      this.log.warn({ name }, "unmute: participant row not found");
+      return false;
+    }
+    await row.scrollIntoViewIfNeeded().catch(() => void 0);
+    await row.hover().catch(() => void 0);
+    await this.page.waitForTimeout(250);
+
+    // 1) A direct unmute/ask button in the row.
+    for (const sel of selectors.rowUnmuteButton.candidates) {
+      const b = row.locator(sel).first();
+      if ((await b.count().catch(() => 0)) > 0 && (await b.isVisible().catch(() => false))) {
+        await b.click().catch(() => void 0);
+        this.log.info({ name }, "unmute: clicked row action");
+        return true;
+      }
+    }
+
+    // 2) Otherwise open the row's "More" menu and pick the unmute item.
+    for (const moreSel of selectors.rowMoreButton.candidates) {
+      const more = row.locator(moreSel).first();
+      if ((await more.count().catch(() => 0)) > 0 && (await more.isVisible().catch(() => false))) {
+        await more.click().catch(() => void 0);
+        await this.page.waitForTimeout(300);
+        for (const sel of selectors.rowUnmuteButton.candidates) {
+          const item = this.page.locator(sel).first();
+          if ((await item.count().catch(() => 0)) > 0 && (await item.isVisible().catch(() => false))) {
+            await item.click().catch(() => void 0);
+            await this.page.keyboard.press("Escape").catch(() => void 0);
+            this.log.info({ name }, "unmute: clicked menu action");
+            return true;
+          }
+        }
+        await this.page.keyboard.press("Escape").catch(() => void 0);
+      }
+    }
+
+    this.log.warn({ name }, "unmute: no unmute action found (participant may be unmuted)");
+    return false;
+  }
+
   async waitUntilInMeeting(timeoutMs: number): Promise<boolean> {
     const loc = await this.firstVisible(selectors.inMeetingMarker, timeoutMs);
     return loc !== null;
@@ -502,6 +555,7 @@ export class ZoomWebAdapter {
       shareAudio: "unknown",
       autoAdmit: "experimental",
       lockUnmute: "experimental",
+      unmuteParticipant: "experimental",
       hideBrowser: "experimental",
     };
   }

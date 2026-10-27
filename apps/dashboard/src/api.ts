@@ -42,6 +42,7 @@ export const api = {
   recover: () => req<unknown>("POST", "/zoom/recover"),
   admitAll: () => req<{ admitted: number }>("POST", "/zoom/admit-all"),
   lockUnmute: (lock: boolean) => req<unknown>("POST", "/zoom/lock-unmute", { lock }),
+  unmuteParticipant: (name: string) => req<{ ok: boolean; name: string }>("POST", "/zoom/unmute", { name }),
   setBrowserHidden: (hidden: boolean) => req<unknown>("POST", "/zoom/browser/hidden", { hidden }),
   shareMonitorStart: () => req<unknown>("POST", "/share/monitor/start"),
   shareMonitorStop: () => req<unknown>("POST", "/share/monitor/stop"),

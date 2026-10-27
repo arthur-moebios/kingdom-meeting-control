@@ -141,6 +141,17 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return { admitted };
   });
 
+  app.post("/api/v1/zoom/unmute", admin, async (req, reply) => {
+    const name = (req.body as { name?: string } | undefined)?.name?.trim();
+    if (!name) {
+      await reply.code(400).send({ error: "invalid", message: "name é obrigatório." });
+      return;
+    }
+    ctx.db.audit("admin", "zoom.unmute", { name });
+    const ok = await ctx.zoom.unmuteParticipant(name);
+    return { ok, name };
+  });
+
   app.post("/api/v1/zoom/lock-unmute", admin, async (req) => {
     const lock = (req.body as { lock?: boolean } | undefined)?.lock ?? true;
     ctx.db.audit("admin", "zoom.lock-unmute", { lock });
