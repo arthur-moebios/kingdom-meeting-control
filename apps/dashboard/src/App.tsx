@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CapabilityStatus } from "@kmc/shared-types";
-import { api, getToken, setToken } from "./api.js";
+import { api } from "./api.js";
 import { useLiveState } from "./useLiveState.js";
 import { SettingsPanel } from "./SettingsPanel.js";
 
@@ -27,19 +27,17 @@ function CapBadge({ status }: { status: CapabilityStatus }) {
 
 export function App() {
   const { connected, snapshot, lastEvent, reconnect } = useLiveState();
-  const [token, setTok] = useState(getToken());
   const [logs, setLogs] = useState<{ time: string; levelLabel: string; msg: string }[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
-    if (!token) return;
     const id = setInterval(() => {
       api.logs().then((r) => setLogs(r.logs)).catch(() => void 0);
     }, 4000);
     return () => clearInterval(id);
-  }, [token]);
+  }, []);
 
   const run = async (name: string, fn: () => Promise<unknown>) => {
     setBusy(name);
@@ -53,11 +51,6 @@ export function App() {
     }
   };
 
-  const saveToken = () => {
-    setToken(token);
-    reconnect();
-  };
-
   const s = snapshot;
   const status = s?.status;
 
@@ -69,9 +62,7 @@ export function App() {
           <div className="conn">
             <Dot on={connected} /> {connected ? "Painel conectado" : "Painel desconectado"}
           </div>
-          {getToken() && (
-            <button className="secondary" onClick={() => setShowSettings(true)}>⚙ Configurações</button>
-          )}
+          <button className="secondary" onClick={() => setShowSettings(true)}>⚙ Configurações</button>
         </div>
       </header>
 
@@ -82,22 +73,6 @@ export function App() {
           onSaved={reconnect}
         />
       )}
-
-      {!getToken() && (
-        <div className="card warn">
-          Informe o token de acesso (admin ou visualizador) para conectar.
-        </div>
-      )}
-
-      <div className="card tokenbar">
-        <input
-          type="password"
-          placeholder="Token de acesso"
-          value={token}
-          onChange={(e) => setTok(e.target.value)}
-        />
-        <button onClick={saveToken}>Salvar / Conectar</button>
-      </div>
 
       {error && <div className="card error">{error}</div>}
 

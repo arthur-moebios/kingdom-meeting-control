@@ -27,6 +27,8 @@ const RawConfigSchema = z.object({
 export type AppConfig = z.infer<typeof RawConfigSchema> & {
   dbPath: string;
   publicDir: string;
+  /** Token auth is only enforced when BOTH tokens are set via env. */
+  authEnabled: boolean;
 };
 
 /**
@@ -69,6 +71,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...parsed,
     dbPath: path.join(parsed.dataDir, "kmc.sqlite"),
     publicDir,
+    authEnabled: Boolean(env.KMC_ADMIN_TOKEN && env.KMC_VIEWER_TOKEN),
   };
 }
 

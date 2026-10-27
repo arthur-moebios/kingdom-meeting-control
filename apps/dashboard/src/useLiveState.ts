@@ -23,12 +23,9 @@ export function useLiveState(): LiveState & { reconnect: () => void } {
   useEffect(() => {
     let closed = false;
     const token = getToken();
-    if (!token) {
-      setConnected(false);
-      return;
-    }
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+    const ws = new WebSocket(`${proto}://${location.host}/ws${qs}`);
     wsRef.current = ws;
 
     ws.onopen = () => setConnected(true);
@@ -62,11 +59,10 @@ export function useLiveState(): LiveState & { reconnect: () => void } {
   // Light polling of the snapshot via REST to keep counts fresh between events.
   useEffect(() => {
     const token = getToken();
-    if (!token) return;
     const tick = async (): Promise<void> => {
       try {
         const res = await fetch("/api/v1/zoom/status", {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (!res.ok) return;
         const status = await res.json();

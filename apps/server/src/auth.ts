@@ -5,6 +5,10 @@ export type Role = "admin" | "viewer";
 
 /** Resolve the role from a bearer token (or ?token= for the WS handshake). */
 export function resolveRole(cfg: AppConfig, token: string | undefined): Role | null {
+  // Local personal project: unless env tokens are explicitly configured
+  // (KMC_ADMIN_TOKEN + KMC_VIEWER_TOKEN), auth is disabled and every client
+  // gets full admin access — no token required.
+  if (!cfg.authEnabled) return "admin";
   if (!token) return null;
   if (token === cfg.adminToken) return "admin";
   if (token === cfg.viewerToken) return "viewer";

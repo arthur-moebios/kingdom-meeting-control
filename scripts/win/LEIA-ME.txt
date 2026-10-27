@@ -17,13 +17,13 @@ Como usar
 3) (Opcional) Iniciar sozinho no logon:
    - Clique direito em install-autostart.ps1 > Executar com PowerShell
 
-Tokens de acesso
-----------------
-Na primeira execucao sao gerados tokens (admin e viewer) no arquivo
-runtime\tokens.txt. Use o token ADMIN no painel do operador e o token
-VIEWER no tablet da tribuna.
+Acesso
+------
+Uso local, sem token. O painel abre direto, sem senha.
+(Opcional) Para exigir token, defina as variaveis de ambiente
+KMC_ADMIN_TOKEN e KMC_VIEWER_TOKEN antes de iniciar.
 
 Tablet (tribuna)
 ----------------
-O tablet encontra este PC sozinho na rede (sem IP). Basta informar o token
-VIEWER no app. O PC precisa estar na MESMA rede Wi-Fi.
+O tablet encontra este PC sozinho na rede (sem IP) e conecta direto.
+O PC precisa estar na MESMA rede Wi-Fi.

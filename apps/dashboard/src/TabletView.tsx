@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { getToken, setToken } from "./api.js";
 import { useLiveState } from "./useLiveState.js";
 
 const STATE_LABEL: Record<string, string> = {
@@ -30,24 +28,6 @@ function since(iso: string | null): string {
  */
 export function TabletView() {
   const { connected, snapshot } = useLiveState();
-  const [tok, setTok] = useState("");
-
-  if (!getToken()) {
-    return (
-      <div className="t-setup">
-        <h1>Tribuna</h1>
-        <p>Informe o token de visualização para conectar.</p>
-        <input
-          type="password"
-          placeholder="Token de visualização"
-          value={tok}
-          onChange={(e) => setTok(e.target.value)}
-        />
-        <button onClick={() => { setToken(tok); location.reload(); }}>Conectar</button>
-        <p className="t-hint">Dica: abra com <code>?token=SEU_TOKEN</code> para configurar o quiosque.</p>
-      </div>
-    );
-  }
 
   const status = snapshot?.status;
   const hands = snapshot?.raisedHands;
