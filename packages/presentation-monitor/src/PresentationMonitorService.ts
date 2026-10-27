@@ -34,10 +34,13 @@ export class PresentationMonitorService {
   private timer: NodeJS.Timeout | null = null;
   private readonly isWindows = os.platform() === "win32";
 
-  // Brightness (0-255 avg). Idle projector is ~3; content is well above.
-  // Hysteresis avoids flapping on dark video scenes.
-  private static readonly ON_THRESHOLD = 12;
-  private static readonly OFF_THRESHOLD = 6;
+  // Full-projector average brightness (0-255). Calibrated live (2026-10-27):
+  // JW idle = black screen + a small centre logo → whole-screen avg ~7; an image
+  // fills the screen ~169; a video ~116. So the WHOLE screen average (not the
+  // centre, which always has the logo) cleanly separates media from idle.
+  // Hysteresis + the auto-stop debounce handle brief dark video frames.
+  private static readonly ON_THRESHOLD = 25;
+  private static readonly OFF_THRESHOLD = 12;
 
   constructor(
     private readonly log: PresentationLogger,
@@ -162,11 +165,10 @@ $g.Dispose();$tg.Dispose();$bmp.Dispose();$t.Dispose()
   private async probe(): Promise<{ jw: boolean; brightness: number | null }> {
     if (!this.isWindows) return { jw: false, brightness: null };
     const b = this.projectorBounds;
-    const sz = 160;
-    const cx = b ? Math.round(b.x + b.width / 2 - sz / 2) : 0;
-    const cy = b ? Math.round(b.y + b.height / 2 - sz / 2) : 0;
+    // Capture the WHOLE projector and downscale to 64x40, then average — so the
+    // idle centre logo doesn't keep it "active". Fast enough at a ~1.2s poll.
     const sampling = b
-      ? `$bmp=New-Object System.Drawing.Bitmap ${sz},${sz};$g=[System.Drawing.Graphics]::FromImage($bmp);$g.CopyFromScreen(${cx},${cy},0,0,(New-Object System.Drawing.Size(${sz},${sz})));$s=0;$n=0;for($i=0;$i -lt ${sz};$i+=16){for($j=0;$j -lt ${sz};$j+=16){$p=$bmp.GetPixel($i,$j);$s+=($p.R+$p.G+$p.B);$n++}};$g.Dispose();$bmp.Dispose();$br=[int]($s/(3*$n))`
+      ? `$bmp=New-Object System.Drawing.Bitmap ${b.width},${b.height};$g=[System.Drawing.Graphics]::FromImage($bmp);$g.CopyFromScreen(${b.x},${b.y},0,0,(New-Object System.Drawing.Size(${b.width},${b.height})));$t=New-Object System.Drawing.Bitmap 64,40;$tg=[System.Drawing.Graphics]::FromImage($t);$tg.DrawImage($bmp,0,0,64,40);$s=0;$n=0;for($i=0;$i -lt 64;$i++){for($j=0;$j -lt 40;$j++){$p=$t.GetPixel($i,$j);$s+=($p.R+$p.G+$p.B);$n++}};$g.Dispose();$tg.Dispose();$bmp.Dispose();$t.Dispose();$br=[int]($s/(3*$n))`
       : `$br=-1`;
     const script = `Add-Type -AssemblyName System.Drawing
 $jw=0
