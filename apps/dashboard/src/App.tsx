@@ -85,36 +85,26 @@ export function App() {
         {/* Cronômetros da reunião (WOL) */}
         {s && <MeetingPanel meeting={s.meeting} warnSeconds={s.settings.meetingSchedule.warnSeconds} />}
 
-        {/* Estado da reunião */}
+        {/* Reunião — só o essencial */}
         <section className="card">
-          <h2>Estado da reunião</h2>
-          {status ? (
-            <table>
-              <tbody>
-                <tr><td>Estado</td><td><strong>{STATE_LABEL[status.state] ?? status.state}</strong></td></tr>
-                <tr><td>Navegador (Chromium)</td><td><Dot on={status.browserRunning} /> {status.browserRunning ? "ativo" : "parado"}</td></tr>
-                <tr><td>Autenticado</td><td><Dot on={status.authenticated} /> {status.authenticated ? "sim" : "não"}</td></tr>
-                <tr><td>ID da reunião</td><td>{status.meetingId ?? "—"}</td></tr>
-                <tr><td>Papel</td><td>{status.role ?? "—"}</td></tr>
-                <tr><td>Entrou em</td><td>{status.joinedAt ? new Date(status.joinedAt).toLocaleTimeString() : "—"}</td></tr>
-                <tr><td>Microfone</td><td><Dot on={status.micOn} /> {status.micOn === null ? "n/d" : status.micOn ? "ligado" : "desligado"}</td></tr>
-                <tr><td>Câmera</td><td><Dot on={status.cameraOn} /> {status.cameraOn === null ? "n/d" : status.cameraOn ? "ligada" : "desligada"}</td></tr>
-                <tr><td>Compartilhando</td><td><Dot on={status.sharing} /> {status.sharing ? "sim" : "não"}</td></tr>
-                <tr><td>Participantes</td><td>{status.participantCount}</td></tr>
-                {status.lastError && <tr><td>Último erro</td><td className="err">{status.lastError}</td></tr>}
-              </tbody>
-            </table>
-          ) : <p className="muted">Sem dados ainda.</p>}
-          <div className="actions">
-            <button disabled={!!busy} onClick={() => run("wait", () => api.waitLogin())}>Aguardar login</button>
-            <button disabled={!!busy} onClick={() => run("join", () => api.join())}>Entrar na reunião</button>
-            <button disabled={!!busy} onClick={() => run("admit", () => api.admitAll())}>Admitir todos</button>
-            <button disabled={!!busy} className="danger" onClick={() => run("leave", () => api.leave())}>Sair</button>
-          </div>
-          <p className="muted small">
-            Iniciar como anfitrião via Zoom Web não é suportado nesta fase — o operador inicia a
-            reunião e o sistema entra.
+          <h2>Reunião</h2>
+          <p className="muted">
+            {!status
+              ? "Conectando…"
+              : !status.authenticated
+                ? "Faça login no Zoom na janela do Chromium (uma vez)."
+                : status.state === "IN_MEETING" || status.state === "SHARING"
+                  ? "Na reunião."
+                  : "Pronto para entrar."}
           </p>
+          <div className="actions">
+            <button className="big" disabled={!!busy} onClick={() => run("join", () => api.join())}>
+              ▶ Entrar na reunião
+            </button>
+            <button disabled={!!busy} className="secondary" onClick={() => run("leave", () => api.leave())}>
+              Sair
+            </button>
+          </div>
         </section>
 
         {/* Mãos levantadas */}
@@ -136,6 +126,30 @@ export function App() {
         </section>
 
         {advanced && (<>
+        {/* Estado detalhado */}
+        <section className="card">
+          <h2>Estado detalhado</h2>
+          {status ? (
+            <table>
+              <tbody>
+                <tr><td>Estado</td><td><strong>{STATE_LABEL[status.state] ?? status.state}</strong></td></tr>
+                <tr><td>Navegador (Chromium)</td><td><Dot on={status.browserRunning} /> {status.browserRunning ? "ativo" : "parado"}</td></tr>
+                <tr><td>Autenticado</td><td><Dot on={status.authenticated} /> {status.authenticated ? "sim" : "não"}</td></tr>
+                <tr><td>ID da reunião</td><td>{status.meetingId ?? "—"}</td></tr>
+                <tr><td>Papel</td><td>{status.role ?? "—"}</td></tr>
+                <tr><td>Microfone</td><td><Dot on={status.micOn} /> {status.micOn === null ? "n/d" : status.micOn ? "ligado" : "desligado"}</td></tr>
+                <tr><td>Câmera</td><td><Dot on={status.cameraOn} /> {status.cameraOn === null ? "n/d" : status.cameraOn ? "ligada" : "desligada"}</td></tr>
+                <tr><td>Compartilhando</td><td><Dot on={status.sharing} /> {status.sharing ? "sim" : "não"}</td></tr>
+                {status.lastError && <tr><td>Último erro</td><td className="err">{status.lastError}</td></tr>}
+              </tbody>
+            </table>
+          ) : <p className="muted">Sem dados ainda.</p>}
+          <div className="actions">
+            <button disabled={!!busy} onClick={() => run("wait", () => api.waitLogin())}>Aguardar login</button>
+            <button disabled={!!busy} onClick={() => run("admit", () => api.admitAll())}>Admitir todos</button>
+          </div>
+        </section>
+
         {/* Participantes */}
         <section className="card">
           <h2>Participantes ({s?.participants.length ?? 0})</h2>

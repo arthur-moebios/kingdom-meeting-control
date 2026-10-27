@@ -95,19 +95,40 @@ export class ChromiumManager {
   }
 
   /**
-   * Show/hide the window at runtime via CDP. "Hidden" moves it OFF-SCREEN (not
-   * minimized, not headless) so the page keeps rendering and screen capture
-   * keeps working, while the operator does not see it.
+   * Show/hide the window at runtime via CDP.
+   *
+   * "Hidden" MINIMIZES the window — reliable and it never steals focus. (Moving
+   * the window off-screen does not work when it launched maximized: Chrome
+   * ignores the position and just refocuses it, so the window appeared to pop to
+   * the foreground instead of hiding.) Minimized keeps the media/WebRTC session
+   * alive, so an in-progress screen share of the projector keeps working.
+   *
+   * NOTE: a minimized window still has a taskbar button. The meeting itself is
+   * controlled from the dashboard, so the operator never needs this window.
    */
   async setHidden(hidden: boolean): Promise<void> {
     if (!this.context || !this.page) return;
     try {
       const cdp = await this.context.newCDPSession(this.page);
       const info = (await cdp.send("Browser.getWindowForTarget")) as { windowId: number };
-      const bounds = hidden
-        ? { left: -32000, top: -32000, width: 1280, height: 800, windowState: "normal" as const }
-        : { left: 60, top: 60, width: 1280, height: 800, windowState: "normal" as const };
-      await cdp.send("Browser.setWindowBounds", { windowId: info.windowId, bounds });
+      if (hidden) {
+        await cdp.send("Browser.setWindowBounds", {
+          windowId: info.windowId,
+          bounds: { windowState: "minimized" },
+        });
+      } else {
+        // Restore to a normal state first (you cannot change position while
+        // minimized/maximized), then bring it on-screen and to the front.
+        await cdp.send("Browser.setWindowBounds", {
+          windowId: info.windowId,
+          bounds: { windowState: "normal" },
+        });
+        await cdp.send("Browser.setWindowBounds", {
+          windowId: info.windowId,
+          bounds: { left: 60, top: 60, width: 1280, height: 800 },
+        });
+        await this.page.bringToFront().catch(() => void 0);
+      }
       await cdp.detach().catch(() => void 0);
       this.log.info({ hidden }, "Chromium window visibility set");
     } catch (err) {

@@ -16,6 +16,9 @@ class Launcher
             Arguments = "\"" + Path.Combine(dir, "server.mjs") + "\"",
             WorkingDirectory = dir,
             UseShellExecute = false,
+            // Run the Node server without a visible console window (no terminal).
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
         };
         psi.EnvironmentVariables["KMC_BASE_DIR"] = dir;
         psi.EnvironmentVariables["KMC_PUBLIC_DIR"] = Path.Combine(dir, "public");
