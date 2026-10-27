@@ -17,3 +17,13 @@ chromium-profile/
 .vite/
 .DS_Store
 Thumbs.db
+
+# Android
+apps/tablet-android/.gradle/
+apps/tablet-android/build/
+apps/tablet-android/app/build/
+apps/tablet-android/local.properties
+apps/tablet-android/captures/
+*.apk
+*.keystore
+*.jks
