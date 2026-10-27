@@ -230,7 +230,7 @@ export class ZoomWebAdapter {
       return false;
     }
     await btn.click().catch(() => void 0);
-    await this.page.waitForTimeout(1200);
+    await this.page.waitForTimeout(500);
     return true;
   }
 

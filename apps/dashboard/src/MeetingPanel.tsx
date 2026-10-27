@@ -36,7 +36,7 @@ export function MeetingPanel({ meeting, warnSeconds }: { meeting: MeetingSchedul
   const active = meeting.parts.find((p) => p.id === meeting.activePartId) ?? null;
 
   return (
-    <section className="card wide meeting">
+    <section className="card meeting">
       <div className="m-head">
         <div>
           <h2 style={{ margin: 0 }}>Reunião</h2>

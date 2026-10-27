@@ -23,6 +23,17 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--muted); text-transform: u
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
 .card.wide { grid-column: 1 / -1; }
+
+/* Card order (most-used first): Timer, Participants, Announcements, then the rest.
+   On a wide screen Timer + Participants sit side by side with Announcements full
+   width below; on a small notebook they stack in this order. */
+.grid > * { order: 10; }
+.grid > .meeting { order: 1; }
+.grid > .ord-participants { order: 2; }
+.grid > .ord-ann { order: 3; }
+.grid > .ord-reuniao { order: 4; }
+.grid > .ord-maos { order: 5; }
+.grid > .ord-tablet { order: 6; }
 .card.warn { background: #422006; border-color: #a16207; }
 .card.error { background: #450a0a; border-color: #b91c1c; }
 .tokenbar { display: flex; gap: 8px; }

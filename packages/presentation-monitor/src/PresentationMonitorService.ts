@@ -154,10 +154,40 @@ $g.Dispose();$tg.Dispose();$bmp.Dispose();$t.Dispose()
     }
   }
 
+  /**
+   * Single fast probe: detect JW + sample a SMALL center region of the projector
+   * in ONE PowerShell call (one spawn, small bitmap), so the poll can run often
+   * with low overhead and low latency.
+   */
+  private async probe(): Promise<{ jw: boolean; brightness: number | null }> {
+    if (!this.isWindows) return { jw: false, brightness: null };
+    const b = this.projectorBounds;
+    const sz = 160;
+    const cx = b ? Math.round(b.x + b.width / 2 - sz / 2) : 0;
+    const cy = b ? Math.round(b.y + b.height / 2 - sz / 2) : 0;
+    const sampling = b
+      ? `$bmp=New-Object System.Drawing.Bitmap ${sz},${sz};$g=[System.Drawing.Graphics]::FromImage($bmp);$g.CopyFromScreen(${cx},${cy},0,0,(New-Object System.Drawing.Size(${sz},${sz})));$s=0;$n=0;for($i=0;$i -lt ${sz};$i+=16){for($j=0;$j -lt ${sz};$j+=16){$p=$bmp.GetPixel($i,$j);$s+=($p.R+$p.G+$p.B);$n++}};$g.Dispose();$bmp.Dispose();$br=[int]($s/(3*$n))`
+      : `$br=-1`;
+    const script = `Add-Type -AssemblyName System.Drawing
+$jw=0
+if(Get-Process|Where-Object{ $_.MainWindowTitle -match 'JW Library' -or $_.ProcessName -match 'JWLibrary' }){$jw=1}
+${sampling}
+"$jw $br"`;
+    try {
+      const raw = (await this.runPowerShell(script)).trim();
+      const parts = raw.split(/\s+/);
+      const jw = parts[0] === "1";
+      const n = parts[1] != null ? parseInt(parts[1], 10) : NaN;
+      return { jw, brightness: Number.isFinite(n) && n >= 0 ? n : null };
+    } catch (err) {
+      this.log.debug({ err: String(err) }, "probe failed");
+      return { jw: false, brightness: null };
+    }
+  }
+
   /** One observation cycle: JW running + projector brightness → presentationActive. */
   private async refresh(): Promise<void> {
-    const jw = await this.detectJwRunning();
-    const brightness = await this.sampleProjectorBrightness();
+    const { jw, brightness } = await this.probe();
 
     // Hysteresis: turn ON above ON_THRESHOLD, OFF below OFF_THRESHOLD, else hold.
     let active = this.status.presentationActive;
@@ -166,12 +196,12 @@ $g.Dispose();$tg.Dispose();$bmp.Dispose();$t.Dispose()
       else if (brightness <= PresentationMonitorService.OFF_THRESHOLD) active = false;
     }
     // Only consider it a JW presentation if JW is actually running.
-    const presentationActive = active && jw.detected;
+    const presentationActive = active && jw;
 
     const next: PresentationStatus = {
-      jwLibraryDetected: jw.detected,
+      jwLibraryDetected: jw,
       presentationActive,
-      matchedWindowTitle: jw.title,
+      matchedWindowTitle: jw ? "JW Library" : null,
       updatedAt: new Date().toISOString(),
     };
     const changed =
@@ -180,14 +210,14 @@ $g.Dispose();$tg.Dispose();$bmp.Dispose();$t.Dispose()
     this.status = next;
     if (changed) {
       this.log.info(
-        { presentationActive, brightness, jw: jw.detected },
+        { presentationActive, brightness, jw },
         "Presentation state changed",
       );
       if (this.onChange) this.onChange(next);
     }
   }
 
-  start(projectorDisplayId: string | null, intervalMs = 4000): void {
+  start(projectorDisplayId: string | null, intervalMs = 1200): void {
     if (!this.isWindows) return;
     this.stop();
     void this.enumerateDisplays(projectorDisplayId).then(() => void this.refresh());

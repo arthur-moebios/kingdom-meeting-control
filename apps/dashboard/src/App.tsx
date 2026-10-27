@@ -108,7 +108,7 @@ export function App() {
         {s && <MeetingPanel meeting={s.meeting} warnSeconds={s.settings.meetingSchedule.warnSeconds} />}
 
         {/* Reunião — só o essencial */}
-        <section className="card">
+        <section className="card ord-reuniao">
           <h2>Reunião</h2>
           <p className="muted">
             {!status
@@ -153,7 +153,7 @@ export function App() {
         )}
 
         {/* Tablet / rede */}
-        <section className="card">
+        <section className="card ord-tablet">
           <h2>Tablet (tribuna)</h2>
           {net && net.addresses.length > 0 ? (
             <>
@@ -173,7 +173,7 @@ export function App() {
         </section>
 
         {/* Mãos levantadas */}
-        <section className="card">
+        <section className="card ord-maos">
           <h2>Mãos levantadas {s?.raisedHands.partial && <span className="pill">lista parcial</span>}</h2>
           {s && s.raisedHands.order.length > 0 ? (
             <ol className="handlist">
@@ -201,7 +201,7 @@ export function App() {
         </section>
 
         {/* Participantes (lista + desmutar) */}
-        <section className="card">
+        <section className="card ord-participants">
           <h2>Participantes ({s?.participants.length ?? 0})</h2>
           {s && s.participants.length > 0 ? (
             <ul className="handlist">
@@ -333,7 +333,7 @@ function AnnouncementsEditor({
     if (!dirty) setText(value);
   }, [value, dirty]);
   return (
-    <section className="card wide">
+    <section className="card wide ord-ann">
       <h2>Anúncios (enviados ao tablet)</h2>
       <textarea
         className="annedit"

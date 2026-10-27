@@ -33,7 +33,7 @@ function Find-Dialog {
 
 $dlg = $null
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
-while ((Get-Date) -lt $deadline) { $dlg = Find-Dialog; if ($dlg) { break }; Start-Sleep -Milliseconds 300 }
+while ((Get-Date) -lt $deadline) { $dlg = Find-Dialog; if ($dlg) { break }; Start-Sleep -Milliseconds 120 }
 if ($null -eq $dlg) { Write-Output "NO_DIALOG"; exit 2 }
 
 # 1) Select the "Janela" / "Window" tab so application windows are listed.
@@ -42,14 +42,14 @@ foreach ($t in $dlg.FindAll($TS::Descendants, (New-Cond $AE::ControlTypeProperty
     try { ($t.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)).Select() } catch {}
   }
 }
-Start-Sleep -Milliseconds 400
+Start-Sleep -Milliseconds 180
 
 # 2) Select the source window whose title contains $SourceTitle.
 $src = $null
 foreach ($b in (Get-Buttons $dlg)) { if ($b.Current.Name -like "*$SourceTitle*") { $src = $b; break } }
 if ($null -eq $src) { Write-Output "NO_SOURCE"; exit 3 }
 try { ($src.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke() } catch {}
-Start-Sleep -Milliseconds 350
+Start-Sleep -Milliseconds 150
 
 # 3) Enable "Compartilhar com áudio do sistema".
 if ($Audio -ne 0) {
@@ -62,7 +62,7 @@ if ($Audio -ne 0) {
     }
   }
 }
-Start-Sleep -Milliseconds 200
+Start-Sleep -Milliseconds 100
 
 # 4) Click "Compartilhar".
 $share = $null
