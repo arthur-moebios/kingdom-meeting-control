@@ -12,6 +12,9 @@ on:
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write # needed to publish the APK as a Release asset
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -26,16 +29,31 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@v3
         with:
-          # Avoid the obsolete 'tools' package; install exactly what AGP needs.
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
+
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
-      - name: Upload APK
+
+      - name: Stage APK with a stable name
+        run: cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/tribuna-tablet.apk"
+
+      - name: Upload CI artifact
         uses: actions/upload-artifact@v4
         with:
           name: tribuna-debug-apk
-          path: apps/tablet-android/app/build/outputs/apk/debug/*.apk
+          path: tribuna-tablet.apk
           if-no-files-found: error
+
+      # Public, stable download URL for the tablet:
+      # https://github.com/<owner>/<repo>/releases/download/tablet-latest/tribuna-tablet.apk
+      - name: Publish to Release (public download)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: tablet-latest
+          name: Tablet (latest)
+          body: "APK de debug mais recente do Painel da Tribuna. Baixe tribuna-tablet.apk no tablet."
+          files: tribuna-tablet.apk
