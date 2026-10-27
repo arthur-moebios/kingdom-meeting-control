@@ -1,6 +1,7 @@
 package com.salaodoreino.tribuna.net
 
 import com.salaodoreino.tribuna.model.AppJson
+import com.salaodoreino.tribuna.model.MeetingSchedule
 import com.salaodoreino.tribuna.model.RaisedHands
 import com.salaodoreino.tribuna.model.ZoomStatus
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,11 @@ class KmcApi(private val baseUrl: String, private val token: String) {
 
     suspend fun raisedHands(): RaisedHands? = withContext(Dispatchers.IO) {
         runCatching { getBody("/zoom/raised-hands")?.let { AppJson.decodeFromString<RaisedHands>(it) } }
+            .getOrNull()
+    }
+
+    suspend fun meeting(): MeetingSchedule? = withContext(Dispatchers.IO) {
+        runCatching { getBody("/meeting")?.let { AppJson.decodeFromString<MeetingSchedule>(it) } }
             .getOrNull()
     }
 }

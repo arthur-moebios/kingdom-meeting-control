@@ -39,3 +39,29 @@ data class RaisedHands(
     val orderSource: String = "unknown",
     val partial: Boolean = false,
 )
+
+/** One timed meeting part (from wol.jw.org, timer controlled on the PC). */
+@Serializable
+data class MeetingPart(
+    val id: String,
+    val section: String = "",
+    val order: Int = 0,
+    val title: String = "",
+    val allottedSec: Int = 0,
+    val running: Boolean = false,
+    val startedAt: String? = null,
+    val baseElapsedSec: Double = 0.0,
+    val source: String = "wol",
+)
+
+@Serializable
+data class MeetingSchedule(
+    val source: String = "none",
+    val kind: String? = null,
+    val weekLabel: String = "",
+    val title: String = "",
+    val activePartId: String? = null,
+    val parts: List<MeetingPart> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
+)

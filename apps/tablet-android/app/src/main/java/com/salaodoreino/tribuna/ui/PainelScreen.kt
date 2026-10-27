@@ -28,10 +28,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PanTool
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
@@ -49,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -63,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.salaodoreino.tribuna.vm.Conn
 import com.salaodoreino.tribuna.vm.HandUi
+import com.salaodoreino.tribuna.vm.PartUi
 import com.salaodoreino.tribuna.vm.UiState
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
@@ -72,13 +71,12 @@ import java.util.Locale
 @Composable
 fun PainelScreen(state: UiState, onDismiss: (String) -> Unit, onSetToken: (String) -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    var running by remember { mutableStateOf(true) }
-    var elapsed by remember { mutableIntStateOf(0) }
-    val target = 900
-    LaunchedEffect(running) {
-        while (running) {
-            delay(1000)
-            elapsed += 1
+    // Single live clock drives every countdown (the server owns the real timers).
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMs = System.currentTimeMillis()
+            delay(500)
         }
     }
     var fontScale by remember { mutableFloatStateOf(1f) }
@@ -98,9 +96,9 @@ fun PainelScreen(state: UiState, onDismiss: (String) -> Unit, onSetToken: (Strin
             Spacer(Modifier.height(12.dp))
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 when (selectedTab) {
-                    0 -> Dashboard(state, elapsed, target, running, { running = !running }, { elapsed = 0 }, fontScale, smaller, bigger, onDismiss)
+                    0 -> Dashboard(state, nowMs, fontScale, smaller, bigger, onDismiss)
                     1 -> AnnouncementsCard(fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.fillMaxSize())
-                    2 -> Column { TimerCard(elapsed, target, running, { running = !running }) { elapsed = 0 } }
+                    2 -> CronometroTab(state, nowMs)
                     3 -> ParticipantsTab(state, onDismiss)
                     else -> MaisTab(state) { showSettings = true }
                 }
@@ -112,27 +110,41 @@ fun PainelScreen(state: UiState, onDismiss: (String) -> Unit, onSetToken: (Strin
 @Composable
 private fun Dashboard(
     state: UiState,
-    elapsed: Int, target: Int, running: Boolean, onToggle: () -> Unit, onReset: () -> Unit,
+    nowMs: Long,
     fontScale: Float, smaller: () -> Unit, bigger: () -> Unit,
     onDismiss: (String) -> Unit,
 ) {
+    val active = state.parts.firstOrNull { it.active }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = maxWidth > maxHeight
         if (landscape) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TimerCard(elapsed, target, running, onToggle, onReset)
-                    HandsCard(state.hands, state.partial, innerScroll = true, modifier = Modifier.weight(1f), onDismiss = onDismiss)
+                    ActiveTimerCard(active, state.weekLabel, nowMs)
+                    PartsCard(state.parts, nowMs, innerScroll = true, modifier = Modifier.weight(1f))
                 }
-                AnnouncementsCard(fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.weight(1f).fillMaxHeight())
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HandsCard(state.hands, state.partial, innerScroll = true, modifier = Modifier.weight(1f), onDismiss = onDismiss)
+                    AnnouncementsCard(fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.weight(1f))
+                }
             }
         } else {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                TimerCard(elapsed, target, running, onToggle, onReset)
+                ActiveTimerCard(active, state.weekLabel, nowMs)
+                PartsCard(state.parts, nowMs, innerScroll = false)
                 HandsCard(state.hands, state.partial, innerScroll = false, onDismiss = onDismiss)
                 AnnouncementsCard(fontScale, smaller, bigger, innerScroll = false)
             }
         }
+    }
+}
+
+@Composable
+private fun CronometroTab(state: UiState, nowMs: Long) {
+    val active = state.parts.firstOrNull { it.active }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ActiveTimerCard(active, state.weekLabel, nowMs)
+        PartsCard(state.parts, nowMs, innerScroll = true, modifier = Modifier.weight(1f))
     }
 }
 
@@ -294,30 +306,92 @@ private fun CardTitle(icon: ImageVector, title: String, trailing: (@Composable (
     }
 }
 
+private const val WARN_SECONDS = 60
+
+private fun elapsedSecOf(p: PartUi, nowMs: Long): Int {
+    val started = p.startedAtMs
+    val run = if (p.running && started != null)
+        ((nowMs - started) / 1000.0).coerceAtLeast(0.0) else 0.0
+    return (p.baseElapsedSec + run).toInt()
+}
+
+/** Text color for a remaining value (amber near the end, red when over). */
+private fun remColor(remaining: Int, allotted: Int): Color = when {
+    allotted <= 0 -> C.fg
+    remaining < 0 -> C.red
+    remaining <= WARN_SECONDS -> C.amber
+    else -> C.fg
+}
+
 @Composable
-private fun TimerCard(elapsed: Int, target: Int, running: Boolean, onToggle: () -> Unit, onReset: () -> Unit) {
+private fun ActiveTimerCard(part: PartUi?, weekLabel: String, nowMs: Long) {
     SectionCard(Modifier.fillMaxWidth()) {
-        CardTitle(Icons.Filled.Timer, "Tempo da parte")
+        CardTitle(Icons.Filled.Timer, "Parte atual")
         Spacer(Modifier.height(10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(mmss(elapsed), color = C.fg, fontSize = 64.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            Column(horizontalAlignment = Alignment.End) {
-                PillButton(if (running) "Pausar" else "Retomar", if (running) Icons.Filled.Pause else Icons.Filled.PlayArrow, C.green, Color(0xFF042016), onToggle)
-                Spacer(Modifier.height(8.dp))
-                PillButton("Zerar", Icons.Filled.Refresh, C.card, C.fg, onReset, border = true)
-            }
+        if (part == null) {
+            Text("Reunião não iniciada", color = C.fg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            if (weekLabel.isNotBlank()) Text(weekLabel, color = C.muted, fontSize = 13.sp)
+            return@SectionCard
         }
-        Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        val el = elapsedSecOf(part, nowMs)
+        val rem = part.allottedSec - el
+        val col = remColor(rem, part.allottedSec)
+        if (part.section.isNotBlank()) Text(part.section.uppercase(), color = C.blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text(part.title, color = C.fg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (part.allottedSec > 0) mmssSigned(rem) else mmss(el),
+            color = col, fontSize = 72.sp, fontWeight = FontWeight.Bold,
+        )
+        if (part.allottedSec > 0) {
+            Spacer(Modifier.height(10.dp))
             LinearProgressIndicator(
-                progress = { (elapsed.toFloat() / target).coerceIn(0f, 1f) },
-                modifier = Modifier.weight(1f).height(8.dp).clip(CircleShape),
-                color = C.lime, trackColor = C.cardAlt,
+                progress = { (el.toFloat() / part.allottedSec).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(10.dp).clip(CircleShape),
+                color = if (rem < 0) C.red else if (rem <= WARN_SECONDS) C.amber else C.lime,
+                trackColor = C.cardAlt,
             )
-            Spacer(Modifier.width(10.dp))
-            Text(mmss(target), color = C.muted, fontSize = 14.sp)
         }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (part.running) "Decorrido ${mmss(el)} / ${mmss(part.allottedSec)}" else "pausado",
+            color = C.muted, fontSize = 13.sp,
+        )
+    }
+}
+
+@Composable
+private fun PartsCard(parts: List<PartUi>, nowMs: Long, innerScroll: Boolean, modifier: Modifier = Modifier) {
+    SectionCard(modifier.fillMaxWidth()) {
+        CardTitle(Icons.Filled.Timer, "Partes da reunião (${parts.size})")
+        Spacer(Modifier.height(12.dp))
+        val listMod = if (innerScroll) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier
+        Column(modifier = listMod, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (parts.isEmpty()) Text("Carregando reunião do WOL…", color = C.muted, fontSize = 15.sp)
+            parts.forEach { p -> PartRow(p, nowMs) }
+        }
+    }
+}
+
+@Composable
+private fun PartRow(p: PartUi, nowMs: Long) {
+    val el = elapsedSecOf(p, nowMs)
+    val rem = p.allottedSec - el
+    val col = remColor(rem, p.allottedSec)
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.cardAlt)
+            .then(if (p.active) Modifier.border(1.dp, C.blue, RoundedCornerShape(12.dp)) else Modifier)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            if (p.section.isNotBlank()) Text(p.section.uppercase(), color = C.muted, fontSize = 10.sp)
+            Text(p.title, color = C.fg, fontSize = 16.sp, fontWeight = if (p.active) FontWeight.Bold else FontWeight.Normal)
+        }
+        Text(
+            if (p.allottedSec > 0) mmssSigned(rem) else mmss(el),
+            color = if (p.active) col else C.muted, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+        )
     }
 }
 

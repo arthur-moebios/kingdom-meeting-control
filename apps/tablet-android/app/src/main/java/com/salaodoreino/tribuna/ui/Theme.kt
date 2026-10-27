@@ -33,3 +33,10 @@ fun mmss(totalSeconds: Int): String {
     val s = if (totalSeconds < 0) 0 else totalSeconds
     return "%02d:%02d".format(s / 60, s % 60)
 }
+
+/** m:ss, keeping a leading minus for overtime (e.g. "-1:05"). */
+fun mmssSigned(totalSeconds: Int): String {
+    val neg = totalSeconds < 0
+    val s = abs(totalSeconds)
+    return "${if (neg) "-" else ""}%d:%02d".format(s / 60, s % 60)
+}

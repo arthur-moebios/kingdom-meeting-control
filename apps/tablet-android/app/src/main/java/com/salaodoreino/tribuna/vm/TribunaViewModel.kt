@@ -21,6 +21,18 @@ enum class Conn { NO_TOKEN, SEARCHING, CONNECTED, OFFLINE }
 
 data class HandUi(val id: String, val name: String, val minutesAgo: Int)
 
+/** A meeting part with its timer, ready for live display. */
+data class PartUi(
+    val id: String,
+    val section: String,
+    val title: String,
+    val allottedSec: Int,
+    val baseElapsedSec: Double,
+    val running: Boolean,
+    val startedAtMs: Long?,
+    val active: Boolean,
+)
+
 data class UiState(
     val conn: Conn = Conn.SEARCHING,
     val participantCount: Int = 0,
@@ -28,6 +40,8 @@ data class UiState(
     val hands: List<HandUi> = emptyList(),
     val partial: Boolean = false,
     val host: String? = null,
+    val weekLabel: String = "",
+    val parts: List<PartUi> = emptyList(),
 )
 
 /** Token storage (viewer, read-only) in SharedPreferences. */
@@ -76,15 +90,13 @@ class TribunaViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun tick() {
-        if (token.isBlank()) {
-            _state.update { it.copy(conn = Conn.NO_TOKEN) }
-            return
-        }
         val ep = endpoint
         if (ep == null) {
             _state.update { it.copy(conn = Conn.SEARCHING) }
             return
         }
+        // Local mode: no token required. A token is only sent when one is set
+        // (for the rare case the operator enabled auth on the PC).
         val api = KmcApi("http://${ep.host}:${ep.port}/api/v1", token)
         val status = api.status()
         if (status == null) {
@@ -92,10 +104,24 @@ class TribunaViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val hands = api.raisedHands()
+        val meeting = api.meeting()
         val live = status.state == "IN_MEETING" || status.state == "SHARING"
         val handUi = (hands?.order ?: emptyList())
             .filter { it.id !in dismissed }
             .map { HandUi(it.id, it.displayName, minutesAgo(it.handRaisedAt)) }
+        val activeId = meeting?.activePartId
+        val parts = (meeting?.parts ?: emptyList()).map { mp ->
+            PartUi(
+                id = mp.id,
+                section = mp.section,
+                title = mp.title,
+                allottedSec = mp.allottedSec,
+                baseElapsedSec = mp.baseElapsedSec,
+                running = mp.running,
+                startedAtMs = mp.startedAt?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() },
+                active = mp.id == activeId,
+            )
+        }
         _state.value = UiState(
             conn = Conn.CONNECTED,
             participantCount = status.participantCount,
@@ -103,6 +129,8 @@ class TribunaViewModel(app: Application) : AndroidViewModel(app) {
             hands = handUi,
             partial = hands?.partial ?: false,
             host = ep.host,
+            weekLabel = meeting?.weekLabel ?: "",
+            parts = parts,
         )
     }
 
