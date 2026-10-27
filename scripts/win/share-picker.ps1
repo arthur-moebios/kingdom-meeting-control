@@ -44,10 +44,21 @@ foreach ($t in $dlg.FindAll($TS::Descendants, (New-Cond $AE::ControlTypeProperty
 }
 Start-Sleep -Milliseconds 180
 
-# 2) Select the source window whose title contains $SourceTitle.
+# 2) Select the source window whose title contains $SourceTitle. Retry briefly —
+#    the window list can take a moment to populate.
 $src = $null
-foreach ($b in (Get-Buttons $dlg)) { if ($b.Current.Name -like "*$SourceTitle*") { $src = $b; break } }
-if ($null -eq $src) { Write-Output "NO_SOURCE"; exit 3 }
+$srcDeadline = (Get-Date).AddSeconds(3)
+while ((Get-Date) -lt $srcDeadline -and $null -eq $src) {
+  foreach ($b in (Get-Buttons $dlg)) { if ($b.Current.Name -like "*$SourceTitle*") { $src = $b; break } }
+  if ($null -eq $src) { Start-Sleep -Milliseconds 150 }
+}
+if ($null -eq $src) {
+  # Cancel so a retry starts from a clean state (no stale dialog left open).
+  foreach ($b in (Get-Buttons $dlg)) {
+    if ($b.Current.Name -match '^(Cancelar|Cancel)$') { try { ($b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke() } catch {}; break }
+  }
+  Write-Output "NO_SOURCE"; exit 3
+}
 try { ($src.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke() } catch {}
 Start-Sleep -Milliseconds 150
 

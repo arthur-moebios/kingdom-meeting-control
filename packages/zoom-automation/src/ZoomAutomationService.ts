@@ -274,6 +274,10 @@ export class ZoomAutomationService {
           this.deps.log.info({}, "Auto-share reconcile: presentation active → sharing");
           await this.startMonitorShare().catch(() => void 0);
         }
+        // Backup auto-stop in case the presentation-change event was missed.
+        if (s.share.mode === "automatic" && this.sharing && !this.deps.isPresentationActive()) {
+          this.scheduleAutoStop();
+        }
       } catch (err) {
         this.deps.log.warn({ err: String(err) }, "Participant poll failed");
       }
@@ -395,27 +399,46 @@ export class ZoomAutomationService {
   async startMonitorShare(): Promise<boolean> {
     if (!this.adapter) return false;
     if (this.sharing) return true; // already sharing — don't re-open the picker
-    const opened = await this.adapter.startMonitorShare();
-    if (!opened) return false;
-
     const s = this.deps.getSettings();
     const title = s.share.autoSourceTitle || "JW Library";
     const audio = s.share.shareAudio !== false; // default ON (JW media has audio)
-    const picked = this.deps.driveSharePicker
-      ? await this.deps.driveSharePicker(title, audio).catch(() => false)
-      : false;
 
-    if (picked) {
-      this.sharing = true;
-      if (this.sm.state === "IN_MEETING") this.sm.transition("SHARING");
-      this.deps.emit("zoom.share.started", { auto: true, source: title, audio });
-    } else {
-      this.deps.log.warn(
-        { title },
-        "Share picker not completed automatically — the dialog is open for the operator (assisted).",
-      );
+    // Retry the open + pick a few times — the toolbar reveal, the Share click, or
+    // the window list populating can intermittently miss on the first try.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const opened = await this.adapter.startMonitorShare();
+      if (!opened) {
+        await sleep(500);
+        continue;
+      }
+      const picked = this.deps.driveSharePicker
+        ? await this.deps.driveSharePicker(title, audio).catch(() => false)
+        : false;
+      if (picked) {
+        this.sharing = true;
+        if (this.sm.state === "IN_MEETING") this.sm.transition("SHARING");
+        this.deps.emit("zoom.share.started", { auto: true, source: title, audio, attempt });
+        return true;
+      }
+      this.deps.log.warn({ title, attempt }, "Share picker did not complete; retrying");
+      await sleep(600);
     }
-    return picked;
+    this.deps.log.error({ title }, "Auto-share failed after retries (operator can share manually)");
+    return false;
+  }
+
+  /** Debounced auto-stop: stop sharing if the presentation is still gone after a
+   *  short delay (so a brief dark video frame does not end the share). */
+  private scheduleAutoStop(): void {
+    if (!this.sharing || this.autoStopTimer) return;
+    this.autoStopTimer = setTimeout(() => {
+      this.autoStopTimer = null;
+      if (!this.deps.isPresentationActive() && this.sharing) {
+        this.deps.log.info({}, "Auto-stop: presentation ended → stopping share");
+        void this.stopMonitorShare();
+      }
+    }, 4000);
+    this.autoStopTimer.unref();
   }
 
   async stopMonitorShare(): Promise<void> {
@@ -441,17 +464,9 @@ export class ZoomAutomationService {
         this.deps.log.info({}, "Auto-share: presentation active → starting monitor share");
         await this.startMonitorShare();
       }
-    } else if (this.sharing && !this.autoStopTimer) {
-      // Media removed: stop sharing, but DEBOUNCE so a brief dark frame in a
-      // video doesn't end the share mid-sequence.
-      this.autoStopTimer = setTimeout(() => {
-        this.autoStopTimer = null;
-        if (!this.deps.isPresentationActive() && this.sharing) {
-          this.deps.log.info({}, "Auto-stop: presentation ended → stopping share");
-          void this.stopMonitorShare();
-        }
-      }, 4000);
-      this.autoStopTimer.unref();
+    } else {
+      // Media removed: stop sharing (debounced).
+      this.scheduleAutoStop();
     }
   }
 }

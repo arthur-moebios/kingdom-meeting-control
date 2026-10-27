@@ -207,12 +207,25 @@ export class ZoomWebAdapter {
         const g = globalThis as { innerWidth?: number; innerHeight?: number };
         return { w: g.innerWidth ?? 1280, h: g.innerHeight ?? 800 };
       });
-      await this.page.mouse.move(Math.round(size.w / 2), Math.round(size.h / 2));
-      await this.page.mouse.move(Math.round(size.w / 2), size.h - 24);
-      await this.page.waitForTimeout(350);
+      const cx = Math.round(size.w / 2);
+      const my = Math.round(size.h / 2);
+      // Jitter + sweep top (shared-controls bar) AND bottom (main toolbar), so
+      // Zoom re-shows whichever auto-hidden bar we need.
+      await this.page.mouse.move(cx, my);
+      await this.page.mouse.move(cx + 8, my + 8);
+      await this.page.mouse.move(cx, 8);
+      await this.page.mouse.move(cx, size.h - 14);
+      await this.page.mouse.move(cx, my);
+      await this.page.waitForTimeout(280);
     } catch {
       /* ignore */
     }
+  }
+
+  /** True if a share is currently active (Zoom shows a "Stop Share" control). */
+  async isSharing(): Promise<boolean> {
+    await this.revealControls();
+    return (await this.firstVisible(selectors.stopShareButton, 1000)) !== null;
   }
 
   /**
@@ -453,16 +466,20 @@ export class ZoomWebAdapter {
     return true;
   }
 
-  /** Click Zoom's "Stop Share" to end an active share. */
+  /** Click Zoom's "Stop Share" to end an active share. Retries + confirms. */
   async stopScreenShareClick(): Promise<boolean> {
-    await this.revealControls();
-    const btn = await this.firstVisible(selectors.stopShareButton, 4000);
-    if (!btn) {
-      this.log.warn({}, "stopScreenShareClick: Stop Share button not visible");
-      return false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await this.revealControls();
+      const btn = await this.firstVisible(selectors.stopShareButton, 2500);
+      if (btn) {
+        await btn.click().catch(() => void 0);
+        await this.page.waitForTimeout(450);
+        // Confirm the share actually ended (Stop Share gone).
+        if (!(await this.firstVisible(selectors.stopShareButton, 800))) return true;
+      }
     }
-    await btn.click().catch(() => void 0);
-    return true;
+    this.log.warn({}, "stopScreenShareClick: could not confirm stop after retries");
+    return false;
   }
 
   // -- diagnostics (selector tuning / DOM-change detection) ------------------
