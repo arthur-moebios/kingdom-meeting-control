@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.salaodoreino.tribuna.net.Endpoint
 import com.salaodoreino.tribuna.net.KmcApi
 import com.salaodoreino.tribuna.net.discoverKmc
+import com.salaodoreino.tribuna.net.discoverKmcBeacon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

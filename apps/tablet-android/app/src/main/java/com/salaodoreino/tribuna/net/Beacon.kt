@@ -3,6 +3,7 @@ package com.salaodoreino.tribuna.net
 import android.content.Context
 import android.net.wifi.WifiManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.isActive
