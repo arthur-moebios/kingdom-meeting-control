@@ -36,6 +36,18 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     ts: new Date().toISOString(),
   }));
 
+  // -- discovery (no auth) — lets a client that found us via mDNS confirm the
+  //    service and learn the API/WS paths before pairing (viewer token). -----
+  app.get("/api/v1/discovery", async () => ({
+    service: "kingdom-meeting-control",
+    name: `Kingdom Meeting Control @ ${hostInfo.platform}`,
+    version: VERSION,
+    api: "/api/v1",
+    ws: "/ws",
+    requiresToken: true,
+    roles: ["admin", "viewer"],
+  }));
+
   // -- system ----------------------------------------------------------------
   app.get("/api/v1/system", viewer, async (): Promise<SystemInfo> => {
     const status = ctx.zoom.getStatus();

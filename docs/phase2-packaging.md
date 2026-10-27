@@ -38,6 +38,33 @@ Princípios que já valem e continuam:
 - Configs em **SQLite** (`node:sqlite`, sem build nativo). ✅
 - Tablet é **somente leitura** (viewer token; endpoints de controle dão 403).
 - Nada exposto na internet por padrão; tudo na **LAN**.
+- Os dois apps são **nativos** (EXE empacotado + APK Android nativo) e **se
+  acham sozinhos na LAN, sem IP fixo** (mDNS/DNS-SD).
+
+---
+
+## 0.1 Descoberta na LAN — sem IP fixo (mDNS / DNS-SD) ✅ IMPLEMENTADO (backend)
+
+O PC do Salão **anuncia** um serviço Zeroconf e o tablet **descobre** — nenhum IP
+é digitado em lugar nenhum.
+
+- **Serviço:** `_kmc._tcp.local.`, porta do backend (4317).
+- **TXT:** `v=1`, `api=/api/v1`, `ws=/ws`, `name`, `host`, `version`.
+- **Backend (feito):** `apps/server/src/discovery.ts` usa `bonjour-service` para
+  publicar. **Validado** nesta máquina: um browser mDNS achou
+  `Kingdom Meeting Control @ AVELL | host: AVELL | port: 4317` com os TXT. Há
+  também `GET /api/v1/discovery` (sem auth) para o cliente confirmar o serviço.
+- **Android (a fazer):** `NsdManager` (Network Service Discovery, nativo) procura
+  `_kmc._tcp`, resolve host+porta, lê os TXT e conecta. Sem IP, sem config de rede.
+- **Requisito de rede:** para o tablet alcançar o PC, o backend precisa escutar
+  em **`0.0.0.0`** (hoje o padrão é `127.0.0.1` só loopback). O app já **avisa no
+  log** quando está em loopback. O instalador do Windows vai configurar
+  `KMC_HOST=0.0.0.0` (acesso restrito à LAN + token).
+- **Pareamento/token [DECIDIR]:** como o tablet obtém o viewer token na 1ª vez —
+  opções: (a) digitar uma vez na tela de setup; (b) QR/código mostrado no
+  dashboard que o tablet lê; (c) endpoint de pareamento que o operador aprova no
+  dashboard. Recomendo (b) ou (c) para quiósque. O IP nunca é digitado —
+  descoberta cuida disso; só o token/pareamento.
 
 ---
 
