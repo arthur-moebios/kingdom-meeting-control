@@ -1,0 +1,14 @@
+{
+  "//": "Root type-check project for Node-side code (server, agent, packages). The dashboard is type-checked by its own tsconfig because it needs DOM + JSX libs.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "apps/server/src/**/*.ts",
+    "apps/windows-agent/src/**/*.ts"
+  ],
+  "exclude": ["**/node_modules", "**/dist", "apps/dashboard"]
+}

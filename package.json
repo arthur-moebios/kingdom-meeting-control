@@ -1,0 +1,28 @@
+{
+  "name": "kingdom-meeting-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Automated Zoom Web controller for a Kingdom Hall A/V operator (Windows). Phase 1: foundation, persistent Chromium prototype, admin dashboard.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev:server": "npm run dev --workspace @kmc/server",
+    "dev:dashboard": "npm run dev --workspace @kmc/dashboard",
+    "build:dashboard": "npm run build --workspace @kmc/dashboard",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

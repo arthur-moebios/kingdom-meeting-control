@@ -1,0 +1,22 @@
+{
+  "name": "@kmc/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.0.1",
+    "@kmc/config": "*",
+    "@kmc/presentation-monitor": "*",
+    "@kmc/shared-types": "*",
+    "@kmc/zoom-automation": "*",
+    "@kmc/zoom-web-adapter": "*",
+    "fastify": "^5.2.0",
+    "pino": "^9.5.0",
+    "zod": "^3.24.1"
+  }
+}

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+
+# Runtime data (SQLite db, logs, chromium profile) — never commit
+data/
+runtime/
+chromium-profile/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Build / editor
+.vite/
+.DS_Store
+Thumbs.db

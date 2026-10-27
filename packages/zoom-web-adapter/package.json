@@ -1,0 +1,13 @@
+{
+  "name": "@kmc/zoom-web-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@kmc/shared-types": "*",
+    "playwright": "^1.49.1"
+  }
+}
