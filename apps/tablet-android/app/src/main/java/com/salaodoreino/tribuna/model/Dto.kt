@@ -61,6 +61,19 @@ data class TabletCfg(val announcements: String = "")
 @Serializable
 data class AppSettings(val tablet: TabletCfg = TabletCfg())
 
+/** Full server snapshot pushed over the WebSocket (real-time, like the PC panel). */
+@Serializable
+data class Snapshot(
+    val status: ZoomStatus = ZoomStatus(),
+    val raisedHands: RaisedHands = RaisedHands(),
+    val meeting: MeetingSchedule = MeetingSchedule(),
+    val settings: AppSettings = AppSettings(),
+)
+
+/** A frame on /ws: kind = "snapshot" | "event" | "heartbeat". */
+@Serializable
+data class ServerFrame(val kind: String = "", val snapshot: Snapshot? = null)
+
 @Serializable
 data class MeetingSchedule(
     val source: String = "none",

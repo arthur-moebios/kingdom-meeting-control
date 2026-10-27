@@ -4,8 +4,13 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.salaodoreino.tribuna.model.AppSettings
+import com.salaodoreino.tribuna.model.MeetingSchedule
+import com.salaodoreino.tribuna.model.RaisedHands
+import com.salaodoreino.tribuna.model.ZoomStatus
 import com.salaodoreino.tribuna.net.Endpoint
 import com.salaodoreino.tribuna.net.KmcApi
+import com.salaodoreino.tribuna.net.KmcSocket
 import com.salaodoreino.tribuna.net.discoverKmc
 import com.salaodoreino.tribuna.net.discoverKmcBeacon
 import kotlinx.coroutines.delay
@@ -73,7 +78,11 @@ class TribunaViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var manualHost: String = Prefs.host(app)
     @Volatile private var beaconEndpoint: Endpoint? = null
     @Volatile private var nsdEndpoint: Endpoint? = null
-    private val dismissed = mutableSetOf<String>()
+    @Volatile private var wsConnected: Boolean = false
+    private var socket: KmcSocket? = null
+    private var wsKey: String? = null
+    // Thread-safe: touched by the WebSocket thread (applyData) and the UI (dismiss).
+    private val dismissed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private val _state = MutableStateFlow(UiState(manualHost = manualHost))
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -120,25 +129,52 @@ class TribunaViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { s -> s.copy(hands = s.hands.filter { it.id != id }) }
     }
 
+    /** (Re)connect the real-time WebSocket to the chosen endpoint/token. */
+    private fun ensureSocket(ep: Endpoint) {
+        val key = "${ep.host}:${ep.port}:$token"
+        if (wsKey == key && socket != null) return
+        socket?.close()
+        wsConnected = false
+        wsKey = key
+        socket = KmcSocket(
+            wsUrl = "ws://${ep.host}:${ep.port}/ws",
+            token = token,
+            onSnapshot = { snap -> applyData(snap.status, snap.raisedHands, snap.meeting, snap.settings, ep.host) },
+            onOpenState = { open -> wsConnected = open },
+        ).also { it.connect() }
+    }
+
     private suspend fun tick() {
         val ep = manualEndpoint() ?: beaconEndpoint ?: nsdEndpoint
         if (ep == null) {
             _state.update { it.copy(conn = Conn.SEARCHING) }
             return
         }
-        // Local mode: no token required. A token is only sent when one is set
-        // (for the rare case the operator enabled auth on the PC).
+        ensureSocket(ep)
+        if (wsConnected) return // WebSocket drives state in real time (like the PC panel)
+        // Fallback REST poll only while the WebSocket is not connected.
         val api = KmcApi("http://${ep.host}:${ep.port}/api/v1", token)
         val status = api.status()
         if (status == null) {
             _state.update { it.copy(conn = Conn.OFFLINE, host = ep.host) }
             return
         }
-        val hands = api.raisedHands()
-        val meeting = api.meeting()
-        val settings = api.settings()
+        applyData(status, api.raisedHands(), api.meeting(), api.settings(), ep.host)
+    }
+
+    /** Build UiState from a snapshot (used by both the WebSocket and REST fallback). */
+    private fun applyData(
+        status: ZoomStatus,
+        hands: RaisedHands?,
+        meeting: MeetingSchedule?,
+        settings: AppSettings?,
+        host: String,
+    ) {
         val live = status.state == "IN_MEETING" || status.state == "SHARING"
-        val handUi = (hands?.order ?: emptyList())
+        val raised = hands?.order ?: emptyList()
+        // Drop dismissals for hands no longer raised, so a re-raised hand reappears.
+        dismissed.retainAll(raised.map { it.id }.toHashSet())
+        val handUi = raised
             .filter { it.id !in dismissed }
             .map { HandUi(it.id, it.displayName, minutesAgo(it.handRaisedAt)) }
         val activeId = meeting?.activePartId
@@ -160,12 +196,17 @@ class TribunaViewModel(app: Application) : AndroidViewModel(app) {
             meetingLive = live,
             hands = handUi,
             partial = hands?.partial ?: false,
-            host = ep.host,
+            host = host,
             weekLabel = meeting?.weekLabel ?: "",
             parts = parts,
             announcements = settings?.tablet?.announcements ?: "",
             manualHost = manualHost,
         )
+    }
+
+    override fun onCleared() {
+        socket?.close()
+        super.onCleared()
     }
 
     private fun minutesAgo(iso: String?): Int {

@@ -65,11 +65,16 @@ export function App() {
   return (
     <div className="wrap">
       <header>
-        <h1>Kingdom Meeting Control</h1>
-        <div className="headright">
-          <div className="conn">
-            <Dot on={connected} /> {connected ? "Painel conectado" : "Painel desconectado"}
+        <div className="brand">
+          <div className="brand-logo">📖</div>
+          <div>
+            <h1>Salão do Reino</h1>
+            <div className="brand-sub">Controle da Reunião</div>
           </div>
+        </div>
+        <div className="headright">
+          <HeaderStatus connected={connected} state={status?.state ?? null} />
+          <Clock />
           <button className={advanced ? "" : "secondary"} onClick={() => setAdvanced((v) => !v)}>
             {advanced ? "Ocultar avançado" : "Avançado"}
           </button>
@@ -313,5 +318,41 @@ function AnnouncementsEditor({
         {dirty && <span className="muted small">alterações não salvas</span>}
       </div>
     </section>
+  );
+}
+
+function HeaderStatus({ connected, state }: { connected: boolean; state: string | null }) {
+  let dot = "#9ca3af";
+  let text = "Conectando…";
+  if (!connected) { dot = "#9ca3af"; text = "Painel desconectado"; }
+  else if (!state) { dot = "#9ca3af"; text = "Conectando…"; }
+  else if (state === "IN_MEETING" || state === "SHARING") { dot = "#22c55e"; text = "Reunião ao vivo"; }
+  else if (state === "INITIALIZING") { dot = "#f59e0b"; text = "Iniciando…"; }
+  else if (state === "AUTH_REQUIRED") { dot = "#f59e0b"; text = "Login necessário"; }
+  else if (state === "RECONNECTING") { dot = "#f59e0b"; text = "Reconectando"; }
+  else if (state === "ERROR") { dot = "#ef4444"; text = "Erro"; }
+  else if (state === "AUTHENTICATED") { dot = "#2f6fed"; text = "Pronto"; }
+  else { dot = "#93a3b8"; text = STATE_LABEL[state] ?? state; }
+  return (
+    <div className="statuschip">
+      <span className="dot" style={{ background: dot }} />
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function Clock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 15000);
+    return () => clearInterval(id);
+  }, []);
+  const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const date = now.toLocaleDateString("pt-BR", { weekday: "short", day: "numeric", month: "short" });
+  return (
+    <div className="clock">
+      <span className="clock-date">{date}</span>
+      <span className="clock-time">{time}</span>
+    </div>
   );
 }
