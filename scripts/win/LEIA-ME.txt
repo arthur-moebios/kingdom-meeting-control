@@ -12,7 +12,7 @@ Como usar
 ---------
 1) Extraia esta pasta em um local fixo, ex.: C:\KingdomMeetingControl
 2) De 2 cliques em KingdomMeetingControl.exe
-   - Abre o PAINEL DO OPERADOR no navegador (http://127.0.0.1:4317)
+   - Abre o PAINEL DO OPERADOR numa janela propria do app (WebView2)
    - Abre uma janela do Chromium: faca login no Zoom UMA vez (fica salvo)
 3) (Opcional) Iniciar sozinho no logon:
    - Clique direito em install-autostart.ps1 > Executar com PowerShell

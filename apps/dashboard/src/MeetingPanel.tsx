@@ -135,7 +135,7 @@ export function MeetingPanel({ meeting, warnSeconds }: { meeting: MeetingSchedul
   );
 }
 
-function ActivePart({
+export function ActivePart({
   part,
   now,
   warnSeconds,

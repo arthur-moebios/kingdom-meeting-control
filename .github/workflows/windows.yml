@@ -52,8 +52,21 @@ jobs:
           Copy-Item scripts\win\install-autostart.ps1 pkg\
           Copy-Item scripts\win\share-picker.ps1 pkg\
           Copy-Item scripts\win\LEIA-ME.txt pkg\
+
+          # WebView2 SDK (native window host). Download the NuGet package and
+          # bundle its managed DLLs + the x64 native loader next to the exe.
+          $wv2Ver = "1.0.2792.45"
+          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$wv2Ver" -OutFile wv2.zip
+          Expand-Archive wv2.zip -DestinationPath wv2 -Force
+          Copy-Item wv2\lib\net462\Microsoft.Web.WebView2.Core.dll pkg\
+          Copy-Item wv2\lib\net462\Microsoft.Web.WebView2.WinForms.dll pkg\
+          Copy-Item wv2\runtimes\win-x64\native\WebView2Loader.dll pkg\
+
           $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          & $csc /nologo /target:winexe /r:System.Management.dll /out:pkg\KingdomMeetingControl.exe scripts\win\Launcher.cs
+          & $csc /nologo /target:winexe /platform:x64 `
+            /r:System.dll /r:System.Management.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll `
+            /r:pkg\Microsoft.Web.WebView2.Core.dll /r:pkg\Microsoft.Web.WebView2.WinForms.dll `
+            /out:pkg\KingdomMeetingControl.exe scripts\win\Launcher.cs
           Write-Host "Package contents:"; Get-ChildItem pkg
 
       - name: Zip
