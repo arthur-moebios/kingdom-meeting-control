@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfig, isUsingDefaultTokens, repoRoot } from "@kmc/config";
+import { randomBytes } from "node:crypto";
+import { loadConfig, isUsingDefaultTokens, repoRoot, type AppConfig } from "@kmc/config";
 import { createLogger } from "./logger.js";
 import { AppContext } from "./context.js";
 import { buildApp } from "./app.js";
@@ -22,9 +23,35 @@ function loadEnvFile(): void {
   }
 }
 
+/**
+ * Packaged app: if no real tokens were provided via env, persist random ones to
+ * runtime/tokens.json and write a human-readable runtime/tokens.txt so the
+ * operator can find the admin (dashboard) and viewer (tablet) tokens.
+ */
+function ensureTokens(cfg: AppConfig): void {
+  if (!isUsingDefaultTokens(cfg)) return;
+  fs.mkdirSync(cfg.dataDir, { recursive: true });
+  const file = path.join(cfg.dataDir, "tokens.json");
+  let toks: { admin: string; viewer: string };
+  if (fs.existsSync(file)) {
+    toks = JSON.parse(fs.readFileSync(file, "utf8")) as { admin: string; viewer: string };
+  } else {
+    const gen = (): string => randomBytes(18).toString("base64url");
+    toks = { admin: gen(), viewer: gen() };
+    fs.writeFileSync(file, JSON.stringify(toks, null, 2));
+    fs.writeFileSync(
+      path.join(cfg.dataDir, "tokens.txt"),
+      `ADMIN (painel do operador): ${toks.admin}\nVIEWER (tablet da tribuna): ${toks.viewer}\n`,
+    );
+  }
+  cfg.adminToken = toks.admin;
+  cfg.viewerToken = toks.viewer;
+}
+
 async function main(): Promise<void> {
   loadEnvFile();
   const cfg = loadConfig();
+  ensureTokens(cfg);
   const { logger, ring } = createLogger(cfg.logLevel);
 
   logger.info(

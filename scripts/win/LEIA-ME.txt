@@ -1,0 +1,29 @@
+Kingdom Meeting Control — App Windows (pacote portatil)
+=======================================================
+
+Conteudo:
+  KingdomMeetingControl.exe   -> inicia o app (servidor + abre o painel)
+  node.exe, server.mjs        -> o backend empacotado
+  public\                     -> painel do operador + view da tribuna
+  ms-playwright\              -> navegador Chromium (automacao do Zoom)
+  install-autostart.ps1       -> inicia no logon (opcional)
+
+Como usar
+---------
+1) Extraia esta pasta em um local fixo, ex.: C:\KingdomMeetingControl
+2) De 2 cliques em KingdomMeetingControl.exe
+   - Abre o PAINEL DO OPERADOR no navegador (http://127.0.0.1:4317)
+   - Abre uma janela do Chromium: faca login no Zoom UMA vez (fica salvo)
+3) (Opcional) Iniciar sozinho no logon:
+   - Clique direito em install-autostart.ps1 > Executar com PowerShell
+
+Tokens de acesso
+----------------
+Na primeira execucao sao gerados tokens (admin e viewer) no arquivo
+runtime\tokens.txt. Use o token ADMIN no painel do operador e o token
+VIEWER no tablet da tribuna.
+
+Tablet (tribuna)
+----------------
+O tablet encontra este PC sozinho na rede (sem IP). Basta informar o token
+VIEWER no app. O PC precisa estar na MESMA rede Wi-Fi.

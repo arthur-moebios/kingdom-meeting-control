@@ -1,0 +1,75 @@
+name: Windows app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/server/**"
+      - "apps/dashboard/**"
+      - "packages/**"
+      - "scripts/build-server.mjs"
+      - "scripts/win/**"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install deps
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm ci
+
+      - run: npm run build:dashboard
+      - run: npm run build:server
+
+      - name: Download Chromium into the package
+        shell: pwsh
+        run: |
+          $env:PLAYWRIGHT_BROWSERS_PATH = "$PWD\pkg\ms-playwright"
+          npx playwright install chromium
+
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force pkg | Out-Null
+          Copy-Item dist\server.mjs pkg\
+          Copy-Item -Recurse apps\dashboard\dist pkg\public
+          New-Item -ItemType Directory -Force pkg\node_modules | Out-Null
+          Copy-Item -Recurse node_modules\playwright pkg\node_modules\playwright
+          Copy-Item -Recurse node_modules\playwright-core pkg\node_modules\playwright-core
+          Copy-Item (Get-Command node).Source pkg\node.exe
+          Copy-Item scripts\win\install-autostart.ps1 pkg\
+          Copy-Item scripts\win\LEIA-ME.txt pkg\
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $csc /nologo /target:winexe /out:pkg\KingdomMeetingControl.exe scripts\win\Launcher.cs
+          Write-Host "Package contents:"; Get-ChildItem pkg
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path pkg\* -DestinationPath KingdomMeetingControl-win.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-app
+          path: KingdomMeetingControl-win.zip
+          if-no-files-found: error
+
+      - name: Publish Release (public download)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pc-latest
+          name: Windows app (latest)
+          body: "Pacote portátil do PC do Salão (backend + painel do operador + Chromium). Extraia e rode KingdomMeetingControl.exe."
+          files: KingdomMeetingControl-win.zip

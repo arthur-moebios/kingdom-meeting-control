@@ -46,6 +46,11 @@ export class DiscoveryService {
           version: this.opts.version,
         },
       });
+      // Swallow async mDNS errors (e.g. a name collision when another instance
+      // is on the LAN) so an unhandled 'error' event can never crash the app.
+      this.service.on("error", (err: unknown) => {
+        this.log.warn({ err: String(err) }, "mDNS service error (ignored)");
+      });
       this.log.info(
         { type: "_kmc._tcp", port: this.opts.port, name: this.instanceName },
         "mDNS service published — tablet can discover this PC without an IP",
