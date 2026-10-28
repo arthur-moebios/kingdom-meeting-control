@@ -118,22 +118,27 @@ private fun Dashboard(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = maxWidth > maxHeight
         if (landscape) {
+            // Left: current timer, raised hands below it. Right: announcements,
+            // full height. (The full parts list lives in the Cronômetro tab.)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     ActiveTimerCard(active, state.weekLabel, nowMs)
-                    PartsCard(state.parts, nowMs, innerScroll = true, modifier = Modifier.weight(1f))
-                }
-                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     HandsCard(state.hands, state.partial, innerScroll = true, modifier = Modifier.weight(1f), onDismiss = onDismiss)
-                    AnnouncementsCard(state.announcements, fontScale, smaller, bigger, innerScroll = true, modifier = Modifier.weight(1f))
                 }
+                AnnouncementsCard(
+                    state.announcements, fontScale, smaller, bigger,
+                    innerScroll = true, modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
             }
         } else {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Portrait: current timer, raised hands, announcements — stacked.
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ActiveTimerCard(active, state.weekLabel, nowMs)
-                PartsCard(state.parts, nowMs, innerScroll = false)
-                HandsCard(state.hands, state.partial, innerScroll = false, onDismiss = onDismiss)
-                AnnouncementsCard(state.announcements, fontScale, smaller, bigger, innerScroll = false)
+                HandsCard(state.hands, state.partial, innerScroll = true, modifier = Modifier.weight(1f), onDismiss = onDismiss)
+                AnnouncementsCard(
+                    state.announcements, fontScale, smaller, bigger,
+                    innerScroll = true, modifier = Modifier.weight(1.2f),
+                )
             }
         }
     }
