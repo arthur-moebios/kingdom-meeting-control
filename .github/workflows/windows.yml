@@ -76,10 +76,20 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path pkg\* -DestinationPath KingdomMeetingControl-win.zip -Force
 
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "/DSrcDir=$PWD\pkg" "/DOutDir=$PWD" "/DAppVersion=0.1.0" scripts\win\installer.iss
+          Get-ChildItem KingdomMeetingControl-setup.exe | Select-Object Name, Length
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-app
-          path: KingdomMeetingControl-win.zip
+          path: |
+            KingdomMeetingControl-win.zip
+            KingdomMeetingControl-setup.exe
           if-no-files-found: error
 
       - name: Publish Release (public download)
@@ -88,5 +98,7 @@ jobs:
         with:
           tag_name: pc-latest
           name: Windows app (latest)
-          body: "Pacote portátil do PC do Salão (backend + painel do operador + Chromium). Extraia e rode KingdomMeetingControl.exe."
-          files: KingdomMeetingControl-win.zip
+          body: "PC do Salão: INSTALADOR KingdomMeetingControl-setup.exe (recomendado — instala por usuário, cria atalhos) ou o pacote portátil .zip (extrair e rodar KingdomMeetingControl.exe). Inclui backend + painel + Chromium."
+          files: |
+            KingdomMeetingControl-win.zip
+            KingdomMeetingControl-setup.exe
