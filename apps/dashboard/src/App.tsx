@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { CapabilityStatus } from "@kmc/shared-types";
+import type { CapabilityStatus, PollResult } from "@kmc/shared-types";
 import { api } from "./api.js";
 import { useLiveState } from "./useLiveState.js";
 import { SettingsPanel } from "./SettingsPanel.js";
@@ -128,6 +128,7 @@ export function App() {
             <div className="col-side">
               <TransmissaoCard s={s} busy={busy} run={run} />
               <HandsCard s={s} busy={busy} run={run} />
+              <EnquetesCard busy={busy} run={run} lastEvent={lastEvent} />
               <ParticipantsCard s={s} busy={busy} run={run} />
               <AnunciosCard value={s.settings.tablet.announcements} busy={!!busy} run={run} />
             </div>
@@ -280,6 +281,81 @@ function HandsCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: Ru
         </ul>
       ) : <p className="muted small">Ninguém com a mão levantada.</p>}
     </Card>
+  );
+}
+
+/* ----------------------------------------------------------------- Enquetes */
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function fmtDate(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const dt = new Date(y!, (m ?? 1) - 1, d ?? 1);
+  return dt.toLocaleDateString("pt-BR", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function EnquetesCard({ busy, run, lastEvent }: { busy: string | null; run: RunNamed; lastEvent: string | null }) {
+  const [history, setHistory] = useState<PollResult[]>([]);
+  const load = () => api.pollsHistory().then((r) => setHistory(r.results)).catch(() => void 0);
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 10000);
+    return () => clearInterval(id);
+  }, []);
+  // Refresh promptly when a capture event arrives.
+  useEffect(() => { if (lastEvent && /poll\.results/.test(lastEvent)) load(); }, [lastEvent]);
+
+  const today = todayStr();
+  const todays = history.filter((h) => h.date === today);
+  const past = history.filter((h) => h.date !== today);
+  const byDay = new Map<string, PollResult[]>();
+  for (const p of past) { const a = byDay.get(p.date) ?? []; a.push(p); byDay.set(p.date, a); }
+
+  return (
+    <Card
+      icon="📊"
+      title="Enquetes"
+      trailing={<button className="btn secondary small" disabled={!!busy} onClick={() => run("capturepoll", async () => { await api.capturePoll(); await load(); })}>Capturar</button>}
+    >
+      {todays.length === 0 ? (
+        <p className="muted small">Sem resultados de enquete hoje. A captura é automática enquanto a enquete está aberta no Zoom.</p>
+      ) : (
+        todays.map((p) => <PollResultView key={p.pollName} p={p} />)
+      )}
+      {byDay.size > 0 && (
+        <details className="poll-hist">
+          <summary>Histórico por dia ({byDay.size})</summary>
+          {[...byDay.entries()].map(([date, polls]) => (
+            <div key={date} className="poll-day">
+              <div className="poll-day-date">{fmtDate(date)}</div>
+              {polls.map((p) => <PollResultView key={p.pollName} p={p} compact />)}
+            </div>
+          ))}
+        </details>
+      )}
+    </Card>
+  );
+}
+
+function PollResultView({ p, compact }: { p: PollResult; compact?: boolean }) {
+  return (
+    <div className="pollres">
+      <div className="pollres-head">
+        <span className="pollres-name">{p.pollName}</span>
+        <span className="muted small">{p.totalVoted}/{p.totalParticipants} votaram</span>
+      </div>
+      {!compact && p.question && <div className="pollres-q muted small">{p.question}</div>}
+      <ul className="pollres-opts">
+        {p.options.map((o, i) => (
+          <li key={i} className="pollres-opt">
+            <span className="pollres-opt-label" title={o.label}>{o.label}</span>
+            <span className="pollres-bar"><span className="pollres-barfill" style={{ width: `${o.percent}%` }} /></span>
+            <span className="pollres-opt-val">{o.votes} ({o.percent}%)</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

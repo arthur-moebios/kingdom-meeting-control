@@ -6,6 +6,7 @@ import {
   SettingsSchema,
   type DomainEvent,
   type EventType,
+  type PollResult,
   type Settings,
 } from "@kmc/shared-types";
 
@@ -44,7 +45,41 @@ export class Db {
         k TEXT PRIMARY KEY,
         v TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS poll_results (
+        date TEXT NOT NULL,
+        pollName TEXT NOT NULL,
+        json TEXT NOT NULL,
+        capturedAt TEXT NOT NULL,
+        PRIMARY KEY (date, pollName)
+      );
+      CREATE INDEX IF NOT EXISTS idx_poll_results_date ON poll_results(date);
     `);
+  }
+
+  // -- poll results (history by day) -----------------------------------------
+
+  /** Upsert the latest results for a given day + poll (one row per day+poll). */
+  upsertPollResult(r: PollResult): void {
+    this.db
+      .prepare(
+        "INSERT INTO poll_results (date, pollName, json, capturedAt) VALUES (?, ?, ?, ?) " +
+          "ON CONFLICT(date, pollName) DO UPDATE SET json = excluded.json, capturedAt = excluded.capturedAt",
+      )
+      .run(r.date, r.pollName, JSON.stringify(r), r.capturedAt);
+  }
+
+  listPollResults(limit = 90): PollResult[] {
+    const rows = this.db
+      .prepare("SELECT json FROM poll_results ORDER BY date DESC, pollName ASC LIMIT ?")
+      .all(limit) as { json: string }[];
+    return rows.map((r) => JSON.parse(r.json) as PollResult);
+  }
+
+  pollResultsForDate(date: string): PollResult[] {
+    const rows = this.db
+      .prepare("SELECT json FROM poll_results WHERE date = ? ORDER BY pollName ASC")
+      .all(date) as { json: string }[];
+    return rows.map((r) => JSON.parse(r.json) as PollResult);
   }
 
   // -- generic key/value (JSON) ---------------------------------------------

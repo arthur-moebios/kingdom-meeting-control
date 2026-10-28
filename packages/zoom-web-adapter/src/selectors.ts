@@ -272,6 +272,36 @@ export const selectors = {
       'button.poll-list-item__action-button',
     ],
   },
+  /** The clickable poll-row body that OPENS its results window (running or
+   *  ended) — distinct from the action buttons (End Poll / Launch / Share). */
+  pollRowOpen: {
+    description: "Poll-row content that opens the results window (not its buttons)",
+    candidates: [
+      ".poll-list-item .poll-list-item__topic",
+      ".poll-list-item .poll-list-item__content",
+      ".poll-list-item__topic",
+    ],
+  },
+  /** "View Results" button on a poll row (ended poll). EN + PT. */
+  pollViewResults: {
+    description: "View a poll's results from its row (EN + PT)",
+    candidates: [
+      'button[aria-label^="View Results" i]',
+      'button[aria-label*="View Results" i]',
+      'button[aria-label*="Ver resultado" i]',
+      'button[aria-label*="Ver resultados" i]',
+    ],
+  },
+  /** Marks that the poll results window is open (VERIFIED: .poll__header-name). */
+  pollResultsMarker: {
+    description: "Poll results window open marker",
+    candidates: ['.poll__header-name', '#polling-window'],
+  },
+  /** Close the poll results window (#polling-window). */
+  pollResultsClose: {
+    description: "Close the poll results (#polling-window) window",
+    candidates: ['#polling-window .window-close', '#polling-window button[aria-label="Close" i]'],
+  },
   /** "Reclaim Host" banner button (shown when another device took host). EN + PT. */
   reclaimHostButton: {
     description: "Reclaim host from another device (banner button). EN + PT.",

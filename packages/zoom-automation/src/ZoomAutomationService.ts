@@ -460,6 +460,22 @@ export class ZoomAutomationService {
     return ok;
   }
 
+  /**
+   * Scrape the current poll's results (serialized on the page lock). With
+   * openIfClosed=false (auto-capture) it only reads an already-open results
+   * window — no panel churn. Returns null when no results are available.
+   */
+  async scrapePollResults(openIfClosed = true): Promise<{
+    pollName: string;
+    question: string;
+    totalVoted: number;
+    totalParticipants: number;
+    options: { label: string; votes: number; total: number; percent: number }[];
+  } | null> {
+    if (!this.adapter) return null;
+    return this.runExclusive(() => this.adapter!.scrapePollResults(openIfClosed)).catch(() => null);
+  }
+
   /** Reclaim host from another device now (manual trigger). */
   async reclaimHost(): Promise<boolean> {
     if (!this.adapter) return false;

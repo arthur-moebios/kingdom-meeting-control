@@ -167,6 +167,29 @@ export const MeetingScheduleSchema = z.object({
 export type MeetingSchedule = z.infer<typeof MeetingScheduleSchema>;
 
 // ---------------------------------------------------------------------------
+// Poll results (history by day)
+// ---------------------------------------------------------------------------
+export const PollOptionResultSchema = z.object({
+  label: z.string(),
+  votes: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  percent: z.number().nonnegative(),
+});
+export type PollOptionResult = z.infer<typeof PollOptionResultSchema>;
+
+export const PollResultSchema = z.object({
+  /** Local calendar day, YYYY-MM-DD. */
+  date: z.string(),
+  pollName: z.string(),
+  question: z.string(),
+  totalVoted: z.number().int().nonnegative(),
+  totalParticipants: z.number().int().nonnegative(),
+  options: z.array(PollOptionResultSchema),
+  /** ISO timestamp of the latest capture for this day+poll. */
+  capturedAt: z.string(),
+});
+export type PollResult = z.infer<typeof PollResultSchema>;
+
 // Settings (persisted)
 // ---------------------------------------------------------------------------
 export const SettingsSchema = z.object({
@@ -279,6 +302,7 @@ export const EventTypeSchema = z.enum([
   "zoom.share.stopped",
   "zoom.poll.launched",
   "zoom.host.reclaimed",
+  "poll.results.captured",
   "presentation.started",
   "presentation.ended",
   "meeting.loaded",

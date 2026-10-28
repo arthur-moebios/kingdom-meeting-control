@@ -812,6 +812,93 @@ export class ZoomWebAdapter {
     return true;
   }
 
+  /**
+   * Scrape the current poll's results (name, question, per-option vote counts,
+   * total voted). Returns null when no poll results are available. If the
+   * results window isn't already open (a LIVE poll shows it automatically), it
+   * opens the Polls panel, views the first poll's results, scrapes, then closes
+   * the window. Single-question polls (the attendance count) are fully parsed.
+   */
+  async scrapePollResults(openIfClosed = true): Promise<{
+    pollName: string;
+    question: string;
+    totalVoted: number;
+    totalParticipants: number;
+    options: { label: string; votes: number; total: number; percent: number }[];
+  } | null> {
+    if (!(await this.isInMeeting())) return null;
+    const resultsVisible = (): Promise<boolean> =>
+      this.page.locator(".poll__header-name").first().isVisible().catch(() => false);
+
+    let openedHere = false;
+    if (!(await resultsVisible())) {
+      // A LIVE poll shows the results window automatically; for auto-capture we
+      // only read it when already open (no panel churn). Force-open only when
+      // asked (manual capture).
+      if (!openIfClosed) return null;
+      await this.jsClickToolbarControl(selectors.pollsButton);
+      await this.page.waitForTimeout(1000);
+      // Click the poll row's CONTENT (never its action buttons — End Poll /
+      // Launch / Share) to open the results window; works for a running OR an
+      // ended poll.
+      await this.jsClickOne(selectors.pollRowOpen.candidates);
+      await this.page.waitForTimeout(1200);
+      // Fallback: an ended poll may instead need the explicit "View Results".
+      if (!(await resultsVisible())) {
+        await this.jsClickOne(selectors.pollViewResults.candidates);
+        await this.page.waitForTimeout(1000);
+      }
+      openedHere = true;
+      if (!(await resultsVisible())) {
+        await this.closePollResults();
+        return null;
+      }
+    }
+
+    const data = await this.page.evaluate(() => {
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const doc = (globalThis as { document?: any }).document;
+      const txt = (el: any): string => (el ? (el.textContent || "").trim() : "");
+      const nameEl = doc.querySelector(".poll__header-name");
+      if (!nameEl) return null;
+      const pollName = txt(nameEl);
+      let totalVoted = 0;
+      let totalParticipants = 0;
+      for (const s of Array.from(doc.querySelectorAll(".poll-header-subtitle__section")) as any[]) {
+        const t = s.textContent || "";
+        if (/voted|votaram/i.test(t)) {
+          const m = t.match(/(\d+)\s*(?:of|de)\s*(\d+)/i);
+          if (m) { totalVoted = parseInt(m[1]!, 10); totalParticipants = parseInt(m[2]!, 10); }
+        }
+      }
+      const question = txt(doc.querySelector(".poll-question-title__content")).replace(/^\s*\d+\.\s*/, "");
+      const texs = (Array.from(doc.querySelectorAll(".poll-single-question-answer-result__label-text")) as any[]).map(txt);
+      const pers = (Array.from(doc.querySelectorAll(".poll-single-question-answer-result__label-percent")) as any[])
+        .map(txt)
+        .filter((t: string) => !/answered|respond/i.test(t));
+      const options = texs.map((label: string, i: number) => {
+        const c = pers[i] || "";
+        const m = c.match(/\((\d+)\/(\d+)\)\s*(\d+)/);
+        return {
+          label,
+          votes: m ? parseInt(m[1]!, 10) : 0,
+          total: m ? parseInt(m[2]!, 10) : 0,
+          percent: m ? parseInt(m[3]!, 10) : 0,
+        };
+      });
+      return { pollName, question, totalVoted, totalParticipants, options };
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+    });
+
+    if (openedHere) await this.closePollResults();
+    return data;
+  }
+
+  private async closePollResults(): Promise<void> {
+    await this.jsClickOne(selectors.pollResultsClose.candidates);
+    await this.page.waitForTimeout(150);
+  }
+
   // -- diagnostics (selector tuning / DOM-change detection) ------------------
 
   /**
@@ -934,6 +1021,7 @@ export class ZoomWebAdapter {
       unmuteParticipant: "experimental",
       hideBrowser: "experimental",
       launchPoll: "experimental",
+      pollResults: "experimental",
       reclaimHost: "experimental",
       micCameraOnJoin: "experimental",
       selectCamera: "experimental",

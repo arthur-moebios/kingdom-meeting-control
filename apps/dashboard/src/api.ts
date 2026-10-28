@@ -32,7 +32,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return (await res.json()) as T;
 }
 
-import type { MeetingKind, MeetingSchedule, Settings, SettingsUpdate } from "@kmc/shared-types";
+import type { MeetingKind, MeetingSchedule, PollResult, Settings, SettingsUpdate } from "@kmc/shared-types";
 
 export const api = {
   health: () => req<unknown>("GET", "/health"),
@@ -46,6 +46,9 @@ export const api = {
   setBrowserHidden: (hidden: boolean) => req<unknown>("POST", "/zoom/browser/hidden", { hidden }),
   launchPoll: () => req<{ ok: boolean }>("POST", "/zoom/poll/launch"),
   reclaimHost: () => req<{ ok: boolean }>("POST", "/zoom/reclaim-host"),
+  pollsHistory: () => req<{ results: PollResult[] }>("GET", "/polls/history"),
+  pollsToday: () => req<{ date: string; results: PollResult[] }>("GET", "/polls/today"),
+  capturePoll: () => req<{ ok: boolean; result: PollResult | null }>("POST", "/polls/capture"),
   shareMonitorStart: () => req<unknown>("POST", "/share/monitor/start"),
   shareMonitorStop: () => req<unknown>("POST", "/share/monitor/stop"),
   shareStart: () => req<unknown>("POST", "/share/start"),

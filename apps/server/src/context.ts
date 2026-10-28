@@ -6,7 +6,7 @@ import { repoRoot, type AppConfig } from "@kmc/config";
 import { ZoomAutomationService } from "@kmc/zoom-automation";
 import { PresentationMonitorService } from "@kmc/presentation-monitor";
 import { MeetingService } from "@kmc/meeting";
-import type { Settings, Snapshot } from "@kmc/shared-types";
+import type { PollResult, Settings, Snapshot } from "@kmc/shared-types";
 import { Db } from "./db.js";
 import { EventBus } from "./eventBus.js";
 import type { LogRingBuffer } from "./logger.js";
@@ -178,6 +178,41 @@ export class AppContext {
       const removed = this.db.pruneEvents(this.settings.retention.eventDays);
       if (removed > 0) this.logger.info({ removed }, "Pruned old events");
     }, 6 * 3600_000).unref();
+
+    // Poll results auto-capture every 30s while in a meeting — reads the live
+    // results window only if it is already open (a running poll shows it), so no
+    // panel churn. Stored once per day + poll (latest wins).
+    setInterval(() => {
+      void this.capturePollResults(false);
+    }, 30_000).unref();
+  }
+
+  /**
+   * Scrape the current poll's results and store them for today (one row per
+   * day + poll, latest wins). openIfClosed=true force-opens the results window
+   * (manual capture); false only reads an already-open one (auto-capture).
+   */
+  async capturePollResults(openIfClosed = true): Promise<PollResult | null> {
+    const st = this.zoom.state;
+    if (st !== "IN_MEETING" && st !== "SHARING") return null;
+    const raw = await this.zoom.scrapePollResults(openIfClosed).catch(() => null);
+    if (!raw || !raw.pollName) return null;
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+      now.getDate(),
+    ).padStart(2, "0")}`;
+    const result: PollResult = {
+      date,
+      pollName: raw.pollName,
+      question: raw.question,
+      totalVoted: raw.totalVoted,
+      totalParticipants: raw.totalParticipants,
+      options: raw.options,
+      capturedAt: now.toISOString(),
+    };
+    this.db.upsertPollResult(result);
+    this.bus.publish("poll.results.captured", { date, pollName: raw.pollName, totalVoted: raw.totalVoted });
+    return result;
   }
 
   async shutdown(): Promise<void> {

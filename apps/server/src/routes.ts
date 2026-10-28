@@ -178,6 +178,19 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return { ok };
   });
 
+  // -- poll results (history by day) --
+  app.get("/api/v1/polls/history", viewer, async () => ({ results: ctx.db.listPollResults() }));
+  app.get("/api/v1/polls/today", viewer, async () => {
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return { date, results: ctx.db.pollResultsForDate(date) };
+  });
+  app.post("/api/v1/polls/capture", admin, async () => {
+    ctx.db.audit("admin", "polls.capture", {});
+    const result = await ctx.capturePollResults(true);
+    return { ok: !!result, result };
+  });
+
   app.post("/api/v1/share/monitor/start", admin, async (_req, reply) => {
     ctx.db.audit("admin", "share.monitor.start", {});
     const ok = await ctx.zoom.startMonitorShare();
