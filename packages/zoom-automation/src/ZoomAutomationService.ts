@@ -423,7 +423,10 @@ export class ZoomAutomationService {
   async launchPoll(): Promise<boolean> {
     if (!this.adapter) return false;
     const name = this.deps.getSettings().automations.pollName?.trim() || undefined;
-    const ok = await this.runExclusive(() => this.adapter!.launchPoll(name)).catch(() => false);
+    const ok = await this.runExclusive(() => this.adapter!.launchPoll(name)).catch((err) => {
+      this.deps.log.error({ err: String(err) }, "launchPoll threw");
+      return false;
+    });
     this.deps.log.info({ name: name ?? "(first)", ok }, "Launch poll requested");
     return ok;
   }

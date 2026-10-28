@@ -562,46 +562,117 @@ export class ZoomWebAdapter {
   async launchPoll(pollName?: string): Promise<boolean> {
     if (!(await this.isInMeeting())) return false;
 
-    const pollsBtn = await this.findToolbarControl(selectors.pollsButton, 3000);
-    if (!pollsBtn) {
-      this.log.warn({}, "launchPoll: Polls control not found (polls not enabled or not attached to this meeting)");
-      return false;
-    }
-    await pollsBtn.click({ force: true }).catch(() => void 0);
-    await this.page.waitForTimeout(1200);
+    // Polls need NO trusted gesture (unlike Share/getDisplayMedia), and on the
+    // narrow hidden window the footer toolbar sits BELOW the viewport fold —
+    // so Playwright coordinate clicks on the toolbar / "More" fail
+    // ("outside viewport") and the menu never opens. Drive the whole flow with
+    // in-page JS clicks (viewport-independent). Only the hover that reveals the
+    // per-row "Launch" button uses a real mouse move — and the panel is a side
+    // panel that renders on-screen, so that works.
+    const name = pollName ?? null;
+    await this.revealControls();
 
-    if (!(await this.firstVisible(selectors.pollPanel, 3000))) {
-      this.log.warn({}, "launchPoll: Polls panel did not open");
-      return false;
-    }
+    // Click the first matching selector in the page via JS. Works even for
+    // elements below the fold (no coordinates involved). Each querySelector is
+    // guarded: some candidate lists mix in Playwright-only pseudo-selectors
+    // (e.g. :has-text), which are NOT valid DOM CSS and throw in querySelector —
+    // we skip those here (Playwright's own firstVisible still uses them).
+    const jsClick = (sels: readonly string[]): Promise<boolean> =>
+      this.page.evaluate((list: string[]) => {
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const doc = (globalThis as { document?: any }).document;
+        for (const s of list) {
+          let b: any = null;
+          try { b = doc.querySelector(s); } catch { continue; }
+          if (b) { b.click(); return true; }
+        }
+        return false;
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+      }, sels as string[]);
 
-    const row = pollName
-      ? this.page.locator(".poll-list-item", { hasText: pollName }).first()
-      : this.page.locator(".poll-list-item").first();
-    if ((await row.count().catch(() => 0)) === 0) {
-      this.log.warn({ pollName }, "launchPoll: no poll row found in the panel");
-      return false;
-    }
-    await row.scrollIntoViewIfNeeded().catch(() => void 0);
-    await row.hover().catch(() => void 0); // reveal the per-row Launch button
-    await this.page.waitForTimeout(250);
-
-    // Prefer a Launch button scoped to the hovered row; fall back to a global one.
-    let launch: Locator | null = null;
-    for (const sel of selectors.pollLaunchButton.candidates) {
-      const b = row.locator(sel).first();
-      if ((await b.count().catch(() => 0)) > 0 && (await b.isVisible().catch(() => false))) {
-        launch = b;
-        break;
+    // 1) Open the Polls panel: direct Polls button, else via the "More" menu.
+    let panelOpen = (await this.firstVisible(selectors.pollPanel, 400)) !== null;
+    if (!panelOpen) {
+      const direct = await jsClick(selectors.pollsButton.candidates);
+      if (!direct) {
+        const openedMore = await jsClick(selectors.moreButton.candidates);
+        if (openedMore) {
+          await this.page.waitForTimeout(500);
+          await jsClick(selectors.pollsButton.candidates);
+        }
       }
+      panelOpen = (await this.firstVisible(selectors.pollPanel, 3000)) !== null;
     }
-    if (!launch) launch = await this.firstVisible(selectors.pollLaunchButton, 1500);
-    if (!launch) {
+    if (!panelOpen) {
+      this.log.warn({}, "launchPoll: Polls panel did not open (polls not enabled or not attached to this meeting)");
+      return false;
+    }
+
+    // 2) Find the poll row (by name or first) and hover it to reveal Launch.
+    const rowBox = await this.page.evaluate(
+      (arg: { sels: string[]; name: string | null }) => {
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const doc = (globalThis as { document?: any }).document;
+        const vis = (el: any) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        let rows: any[] = [];
+        for (const s of arg.sels) {
+          let nodes: any[] = [];
+          try { nodes = Array.from(doc.querySelectorAll(s)); } catch { nodes = []; }
+          rows = nodes.filter(vis);
+          if (rows.length) break;
+        }
+        const want = arg.name ? arg.name.toLowerCase() : null;
+        const row: any = want ? rows.find((r: any) => (r.textContent || "").toLowerCase().includes(want)) : rows[0];
+        if (!row) return null;
+        const r = row.getBoundingClientRect();
+        return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+      },
+      { sels: selectors.pollRow.candidates as string[], name },
+    );
+    if (!rowBox) {
+      this.log.warn({ pollName }, "launchPoll: poll row not found in the panel");
+      return false;
+    }
+    await this.page.mouse.move(rowBox.x, rowBox.y).catch(() => void 0);
+    await this.page.waitForTimeout(350);
+
+    // 3) Click the row's Launch button via JS. The mouse stays on the row, so
+    //    the hover-revealed button is still present.
+    const launched = await this.page.evaluate(
+      (arg: { sels: string[]; name: string | null }) => {
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const doc = (globalThis as { document?: any }).document;
+        const vis = (el: any) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        const btns: any[] = [];
+        for (const s of arg.sels) {
+          let nodes: any[] = [];
+          try { nodes = Array.from(doc.querySelectorAll(s)); } catch { nodes = []; }
+          for (const b of nodes) if (vis(b)) btns.push(b);
+        }
+        // Only ever click a genuine Launch/Relaunch control — a poll that was
+        // already run shows "Poll Ended" and its row-action slot becomes
+        // "Share Result" (same class), which must NOT be clicked.
+        const text = (b: any) => ((b.getAttribute("aria-label") || "") + " " + (b.textContent || ""));
+        const launchable = btns.filter((b: any) => /launch|relaunch|lan[çc]ar|relan[çc]ar/i.test(text(b)));
+        let btn: any = launchable[0];
+        if (arg.name) {
+          const want = arg.name.toLowerCase();
+          const named = launchable.find((b: any) => text(b).toLowerCase().includes(want));
+          if (named) btn = named;
+        }
+        if (!btn) return false;
+        btn.click();
+        return true;
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+      },
+      { sels: selectors.pollLaunchButton.candidates as string[], name },
+    );
+    if (!launched) {
       this.log.warn({ pollName }, "launchPoll: Launch button not found on the poll row");
       return false;
     }
 
-    await launch.click({ force: true }).catch(() => void 0);
     await this.page.waitForTimeout(600);
     this.log.info({ pollName: pollName ?? "(first)" }, "launchPoll: clicked Launch");
     return true;

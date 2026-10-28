@@ -239,6 +239,11 @@ export const selectors = {
       'button[aria-label*="Poll" i]',
     ],
   },
+  /** A single poll row in the Polls panel (VERIFIED: .poll-list-item). */
+  pollRow: {
+    description: "A poll row in the Polls panel",
+    candidates: [".poll-list-item", '[class*="poll-list-item" i]'],
+  },
   /** Marks that the Polls panel is open (VERIFIED: .poll-list-item rows, the
    *  "Surveys & Polls" header). */
   pollPanel: {
@@ -251,15 +256,20 @@ export const selectors = {
     ],
   },
   /** The "Launch" button on a poll row (VERIFIED: revealed on hover; class
-   *  poll-list-item__action-button; aria "Launch <poll name>"). EN + PT. */
+   *  poll-list-item__action-button; aria "Launch <poll name>"). EN + PT.
+   *  NOTE: an already-run poll shows "Poll Ended" and its row action button
+   *  becomes "Share Result" (same class) — the adapter filters by Launch/
+   *  Relaunch text so it never clicks Share Result. Launch-specific candidates
+   *  come first; the class is a fallback for locating the row's action button. */
   pollLaunchButton: {
-    description: "Launch a poll from its row in the Polls panel (EN + PT)",
+    description: "Launch / relaunch a poll from its row in the Polls panel (EN + PT)",
     candidates: [
-      'button.poll-list-item__action-button',
       'button[aria-label^="Launch" i]',
+      'button[aria-label^="Relaunch" i]',
       'button[aria-label^="Lançar" i]',
       'button:has-text("Launch")',
       'button:has-text("Lançar")',
+      'button.poll-list-item__action-button',
     ],
   },
 } as const satisfies Record<string, SelectorGroup>;
