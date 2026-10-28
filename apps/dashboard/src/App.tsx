@@ -127,12 +127,11 @@ export function App() {
               <MeetingPanel meeting={s.meeting} warnSeconds={s.settings.meetingSchedule.warnSeconds} />
             </div>
             <div className="col-side">
-              <TransmissaoCard s={s} busy={busy} run={run} />
               <RemoteQrCard />
-              <HandsCard s={s} busy={busy} run={run} />
-              <EnquetesCard busy={busy} run={run} lastEvent={lastEvent} />
-              <ParticipantsCard s={s} busy={busy} run={run} />
               <AnunciosCard value={s.settings.tablet.announcements} busy={!!busy} run={run} />
+              <PeopleCard s={s} busy={busy} run={run} />
+              <EnquetesCard busy={busy} run={run} lastEvent={lastEvent} />
+              <TransmissaoCard s={s} busy={busy} run={run} />
             </div>
           </div>
 
@@ -224,7 +223,7 @@ function AnunciosCard({ value, busy, run }: { value: string; busy: boolean; run:
       <textarea
         className="annedit"
         value={text}
-        rows={5}
+        rows={12}
         placeholder="Escreva os anúncios da reunião…"
         onChange={(e) => { setText(e.target.value); setDirty(true); }}
       />
@@ -237,17 +236,39 @@ function AnunciosCard({ value, busy, run }: { value: string; busy: boolean; run:
   );
 }
 
-/* ----------------------------------------------------------------- Participantes */
-function ParticipantsCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: RunNamed }) {
+/* ------------------------------------------------- Participantes + Mãos (um só) */
+function PeopleCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: RunNamed }) {
+  const hands = s.raisedHands.order; // fila ordenada de mãos levantadas
+  const handNames = new Set(hands.map((p) => p.displayName));
+  const rest = s.participants.filter((p) => !handNames.has(p.displayName));
+  const total = s.participants.length || (hands.length + rest.length);
   return (
-    <Card icon="👥" title={`Participantes (${s.participants.length})`}>
-      {s.participants.length > 0 ? (
+    <Card
+      icon="👥"
+      title={`Participantes (${total})`}
+      trailing={hands.length > 0 ? <span className="pill hand">✋ {hands.length}</span> : undefined}
+    >
+      {hands.length === 0 && rest.length === 0 ? (
+        <p className="muted small">Nenhum participante detectado. (Atualiza com o painel de participantes aberto no Zoom.)</p>
+      ) : (
         <ul className="plist2">
-          {s.participants.map((p) => (
+          {/* Mãos levantadas primeiro, na ordem da fila */}
+          {hands.map((p, i) => (
+            <li key={`h-${p.id}`} className="prow hand">
+              <span className="pav" style={{ background: avatarColor(p.displayName) }}>{initials(p.displayName)}</span>
+              <span className="pinfo">
+                <span className="pname"><span className="phand">✋</span> {i + 1}. {p.displayName}</span>
+                <span className="muted small">mão levantada{p.handRaisedAt ? ` · ${new Date(p.handRaisedAt).toLocaleTimeString()}` : ""}</span>
+              </span>
+              <button className="btn small" disabled={!!busy} onClick={() => run("unmute", () => api.unmuteParticipant(p.displayName))}>🔊</button>
+            </li>
+          ))}
+          {/* Demais participantes */}
+          {rest.map((p) => (
             <li key={p.id} className="prow">
               <span className="pav" style={{ background: avatarColor(p.displayName) }}>{initials(p.displayName)}</span>
               <span className="pinfo">
-                <span className="pname">{p.handRaised ? "✋ " : ""}{p.displayName}</span>
+                <span className="pname">{p.displayName}</span>
                 <span className="muted small">
                   {p.isHost ? "host" : p.isCoHost ? "co-host" : "participante"}
                   {p.isMuted === true ? " · mudo" : p.isMuted === false ? " · com som" : ""}
@@ -259,29 +280,7 @@ function ParticipantsCard({ s, busy, run }: { s: Snapshot; busy: string | null; 
             </li>
           ))}
         </ul>
-      ) : <p className="muted small">Nenhum participante detectado. (Atualiza quando o painel de participantes está aberto no Zoom.)</p>}
-    </Card>
-  );
-}
-
-function HandsCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: RunNamed }) {
-  const hands = s.raisedHands.order;
-  return (
-    <Card icon="✋" title={`Mãos levantadas (${hands.length})`} trailing={s.raisedHands.partial ? <span className="pill">lista parcial</span> : undefined}>
-      {hands.length > 0 ? (
-        <ul className="plist2">
-          {hands.map((p, i) => (
-            <li key={p.id} className="prow">
-              <span className="pav" style={{ background: avatarColor(p.displayName) }}>{initials(p.displayName)}</span>
-              <span className="pinfo">
-                <span className="pname">{i + 1}. {p.displayName}</span>
-                <span className="muted small">{p.handRaisedAt ? new Date(p.handRaisedAt).toLocaleTimeString() : ""}</span>
-              </span>
-              <button className="btn small" disabled={!!busy} onClick={() => run("unmute", () => api.unmuteParticipant(p.displayName))}>🔊</button>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="muted small">Ninguém com a mão levantada.</p>}
+      )}
     </Card>
   );
 }
