@@ -172,6 +172,12 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return { ok };
   });
 
+  app.post("/api/v1/zoom/reclaim-host", admin, async () => {
+    ctx.db.audit("admin", "zoom.reclaim-host", {});
+    const ok = await ctx.zoom.reclaimHost();
+    return { ok };
+  });
+
   app.post("/api/v1/share/monitor/start", admin, async (_req, reply) => {
     ctx.db.audit("admin", "share.monitor.start", {});
     const ok = await ctx.zoom.startMonitorShare();
@@ -305,7 +311,12 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       await reply.code(400).send({ error: "invalid_settings", issues: parsed.error.issues });
       return;
     }
-    const merged = deepMerge(ctx.getSettings(), parsed.data);
+    // Merge the RAW body, not parsed.data: SettingsUpdateSchema (deepPartial)
+    // injects field defaults for absent keys, which would overwrite siblings in
+    // the same sub-object — e.g. a {meeting:{micOnJoin}} patch would wipe
+    // meetingId/passcode/autoJoin. safeParse above still validates shape/types,
+    // and SettingsSchema.safeParse below re-validates the full merged result.
+    const merged = deepMerge(ctx.getSettings(), req.body);
     const validated = SettingsSchema.safeParse(merged);
     if (!validated.success) {
       await reply.code(400).send({ error: "invalid_settings", issues: validated.error.issues });

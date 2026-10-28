@@ -45,6 +45,7 @@ export const api = {
   unmuteParticipant: (name: string) => req<{ ok: boolean; name: string }>("POST", "/zoom/unmute", { name }),
   setBrowserHidden: (hidden: boolean) => req<unknown>("POST", "/zoom/browser/hidden", { hidden }),
   launchPoll: () => req<{ ok: boolean }>("POST", "/zoom/poll/launch"),
+  reclaimHost: () => req<{ ok: boolean }>("POST", "/zoom/reclaim-host"),
   shareMonitorStart: () => req<unknown>("POST", "/share/monitor/start"),
   shareMonitorStop: () => req<unknown>("POST", "/share/monitor/stop"),
   shareStart: () => req<unknown>("POST", "/share/start"),

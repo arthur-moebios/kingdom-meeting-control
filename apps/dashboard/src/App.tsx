@@ -194,6 +194,7 @@ function TransmissaoCard({ s, busy, run }: { s: Snapshot; busy: string | null; r
           {hidden ? "👁 Ver Zoom" : "🙈 Ocultar Zoom"}
         </button>
         <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("poll", () => api.launchPoll())} title="Lança a enquete pré-criada no Zoom">📊 Lançar enquete</button>
+        <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("host", () => api.reclaimHost())} title="Reassume o papel de host se outro dispositivo pegou">👑 Reassumir host</button>
       </div>
     </Card>
   );

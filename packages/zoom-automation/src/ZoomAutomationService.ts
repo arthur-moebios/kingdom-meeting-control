@@ -198,6 +198,18 @@ export class ZoomAutomationService {
       this.deps.emit("zoom.meeting.started", { meetingId: this.meetingId });
 
       // Apply host automations configured for join.
+      // As host, reclaim host if another device grabbed it (required to admit /
+      // launch polls), then join "live": mic + camera on, preferred camera.
+      if (s.automations.autoReclaimHost) {
+        const rec = await this.adapter.reclaimHostIfNeeded().catch(() => false);
+        if (rec) this.deps.emit("zoom.host.reclaimed", { auto: true });
+      }
+      if (s.meeting.micOnJoin) await this.adapter.setMicOn(true).catch(() => void 0);
+      if (s.meeting.cameraOnJoin) await this.adapter.setCameraOn(true).catch(() => void 0);
+      if (s.meeting.cameraLabel) {
+        const cam = await this.adapter.selectCamera(s.meeting.cameraLabel).catch(() => false);
+        this.deps.log.info({ cameraLabel: s.meeting.cameraLabel, cam }, "Select camera on join");
+      }
       if (s.automations.lockUnmute) {
         const okLock = await this.adapter.setAllowUnmuteSelf(false).catch(() => false);
         this.deps.log.info({ okLock }, "Applied lock-unmute on join");
@@ -215,6 +227,8 @@ export class ZoomAutomationService {
           });
         }
       }
+      // Keep the participants list open so auto-admit and the roster keep working.
+      await this.adapter.ensureParticipantsOpen().catch(() => void 0);
       await this.applyVisibility();
       this.startPolling();
 
@@ -276,13 +290,29 @@ export class ZoomAutomationService {
     const tick = async (): Promise<void> => {
       if (!this.adapter) return;
       try {
+        const s = this.deps.getSettings();
+        // Keep host: if another device grabbed it, a "Reclaim Host" banner shows
+        // and we can't admit / launch polls — take it back (cheap banner click,
+        // safe to run even while sharing).
+        if (s.automations.autoReclaimHost) {
+          const rec = await this.runExclusive(() => this.adapter!.reclaimHostIfNeeded()).catch(() => false);
+          if (rec) {
+            this.deps.log.info({}, "Auto-reclaimed host from another device");
+            this.deps.emit("zoom.host.reclaimed", { auto: true });
+          }
+        }
+
         // Scrape under the page lock, and NOT while sharing — during a share the
         // participants rows vanish, so scraping would click the participants
         // toggle underneath the share controls and disrupt the share. Participant
         // management isn't needed during a (short) projection anyway.
         if (!this.sharing) {
           await this.runExclusive(async () => {
-            if (this.deps.getSettings().automations.autoAdmit) {
+            // Keep the participants list open so auto-admit + the roster work
+            // (the toggle collapses into "More"; ensureParticipantsOpen handles
+            // that and no-ops when rows are already visible).
+            await this.adapter!.ensureParticipantsOpen().catch(() => void 0);
+            if (s.automations.autoAdmit) {
               const n = await this.adapter!.admitWaiting().catch(() => 0);
               if (n > 0) {
                 this.deps.log.info({ admitted: n }, "Auto-admitted waiting participant(s)");
@@ -300,7 +330,6 @@ export class ZoomAutomationService {
         // Auto-share reconciliation (OUTSIDE the lock — these lock internally).
         // In automatic mode, keep sharing while JW presents. Robust against
         // timing (fires on the next tick regardless of when it became active).
-        const s = this.deps.getSettings();
         if (s.share.mode === "automatic" && !this.sharing && this.deps.isPresentationActive()) {
           this.deps.log.info({}, "Auto-share reconcile: presentation active → sharing");
           await this.startMonitorShare().catch(() => void 0);
@@ -428,6 +457,15 @@ export class ZoomAutomationService {
       return false;
     });
     this.deps.log.info({ name: name ?? "(first)", ok }, "Launch poll requested");
+    return ok;
+  }
+
+  /** Reclaim host from another device now (manual trigger). */
+  async reclaimHost(): Promise<boolean> {
+    if (!this.adapter) return false;
+    const ok = await this.runExclusive(() => this.adapter!.reclaimHostIfNeeded()).catch(() => false);
+    if (ok) this.deps.emit("zoom.host.reclaimed", { auto: false });
+    this.deps.log.info({ ok }, "Reclaim host requested");
     return ok;
   }
 

@@ -272,6 +272,76 @@ export const selectors = {
       'button.poll-list-item__action-button',
     ],
   },
+  /** "Reclaim Host" banner button (shown when another device took host). EN + PT. */
+  reclaimHostButton: {
+    description: "Reclaim host from another device (banner button). EN + PT.",
+    candidates: [
+      'button[aria-label*="Reclaim Host" i]',
+      'button[aria-label*="Reivindicar função de anfitrião" i]',
+      'button[aria-label*="Recuperar função de anfitrião" i]',
+      'button[aria-label*="Reivindicar host" i]',
+      'button[aria-label*="Recuperar host" i]',
+    ],
+  },
+  /** Close button of the docked Host Tools side panel (Escape often leaves it). */
+  hostToolsClose: {
+    description: "Close/back control of the Host Tools panel",
+    candidates: ['.host-tools-panel__close-right', '.panel-shell-header__back'],
+  },
+  /** The "^" next to Video that opens the video device / background menu. */
+  videoControlsButton: {
+    description: "Open the video controls menu (camera list). EN + PT.",
+    candidates: [
+      'button[aria-label*="More video controls" i]',
+      'button[aria-label*="controles de vídeo" i]',
+      'button[aria-label*="mais controles de vídeo" i]',
+    ],
+  },
+  /** A camera entry inside the video menu (VERIFIED: aria "Select a Camera
+   *  <name> [selected]", class video-option-menu__pop-menu). */
+  cameraOption: {
+    description: "A camera device entry in the video controls menu",
+    candidates: [
+      'button[aria-label*="Select a Camera" i]',
+      'button.video-option-menu__pop-menu',
+      'button[aria-label*="Selecionar uma câmera" i]',
+      'button[aria-label*="Selecionar câmera" i]',
+    ],
+  },
+  /** Footer mic/camera toggles (never collapse — always in the footer). EN + PT. */
+  micUnmute: {
+    description: "Unmute my microphone / join audio (mic currently muted). EN + PT.",
+    candidates: [
+      'button[aria-label*="unmute my microphone" i]',
+      'button[aria-label*="ativar meu microfone" i]',
+      'button[aria-label*="ativar áudio" i]',
+      'button[aria-label*="join audio" i]',
+      'button[aria-label*="entrar no áudio" i]',
+    ],
+  },
+  micMute: {
+    description: "Mute my microphone (mic currently on). EN + PT.",
+    candidates: [
+      'button[aria-label*="mute my microphone" i]',
+      'button[aria-label*="silenciar meu microfone" i]',
+    ],
+  },
+  videoStart: {
+    description: "Start my video (camera currently off). EN + PT.",
+    candidates: [
+      'button[aria-label*="start my video" i]',
+      'button[aria-label*="iniciar meu vídeo" i]',
+      'button[aria-label*="iniciar vídeo" i]',
+    ],
+  },
+  videoStop: {
+    description: "Stop my video (camera currently on). EN + PT.",
+    candidates: [
+      'button[aria-label*="stop my video" i]',
+      'button[aria-label*="parar meu vídeo" i]',
+      'button[aria-label*="interromper vídeo" i]',
+    ],
+  },
 } as const satisfies Record<string, SelectorGroup>;
 
 export type SelectorKey = keyof typeof selectors;

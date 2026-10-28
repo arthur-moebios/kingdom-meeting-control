@@ -110,6 +110,13 @@ export function SettingsPanel({ displays, onClose, onSaved }: Props) {
           <Check label="Iniciar reunião automaticamente" checked={m.autoStartMeeting} onChange={(v) => setMeeting({ autoStartMeeting: v })} />
           <Check label="Microfone ligado ao entrar" checked={m.micOnJoin} onChange={(v) => setMeeting({ micOnJoin: v })} />
           <Check label="Câmera ligada ao entrar" checked={m.cameraOnJoin} onChange={(v) => setMeeting({ cameraOnJoin: v })} />
+          <Field label="Câmera padrão">
+            <input value={m.cameraLabel} onChange={(e) => setMeeting({ cameraLabel: e.target.value })} placeholder='ex.: "OBS" (vazio = atual do Zoom)' />
+          </Field>
+          <p className="muted small">
+            Seleciona a câmera cujo nome contém esse texto ao entrar (ex.: OBS Virtual Camera). O
+            dispositivo precisa existir — a câmera do OBS só aparece com o OBS aberto.
+          </p>
         </fieldset>
 
         <fieldset>
@@ -118,13 +125,13 @@ export function SettingsPanel({ displays, onClose, onSaved }: Props) {
             <select value={sh.mode} onChange={(e) => setShare({ mode: e.target.value as Settings["share"]["mode"] })}>
               <option value="manual">Manual</option>
               <option value="assisted">Assistido</option>
-              <option value="automatic">Automático (desabilitado até validação)</option>
+              <option value="automatic">Automático (recomendado)</option>
             </select>
           </Field>
           {sh.mode === "automatic" && (
-            <p className="muted small warn-text">
-              O modo automático depende de validação em reunião real; a seleção automática de
-              monitor não é suportada de forma confiável.
+            <p className="muted small">
+              Compartilha a janela do JW Library automaticamente quando ele projeta, e para quando
+              a projeção acaba. Deixe o título da tela vazio para usar o seletor por janela.
             </p>
           )}
           <Field label="Monitor do projetor">
@@ -152,6 +159,7 @@ export function SettingsPanel({ displays, onClose, onSaved }: Props) {
           <legend>Automações de anfitrião</legend>
           <Check label="Admitir automaticamente da sala de espera" checked={form.automations.autoAdmit} onChange={(v) => setAutomations({ autoAdmit: v })} />
           <Check label="Impedir que participantes se desmutem (ao entrar)" checked={form.automations.lockUnmute} onChange={(v) => setAutomations({ lockUnmute: v })} />
+          <Check label="Reassumir host automaticamente (se outro aparelho pegar)" checked={form.automations.autoReclaimHost} onChange={(v) => setAutomations({ autoReclaimHost: v })} />
           <Check label="Lançar enquete automaticamente ao entrar" checked={form.automations.autoLaunchPoll} onChange={(v) => setAutomations({ autoLaunchPoll: v })} />
           <Field label="Enquete (nome)">
             <input value={form.automations.pollName} onChange={(e) => setAutomations({ pollName: e.target.value })} placeholder="(vazio = a primeira da lista)" />

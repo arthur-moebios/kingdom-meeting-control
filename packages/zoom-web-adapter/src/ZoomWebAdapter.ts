@@ -170,9 +170,8 @@ export class ZoomWebAdapter {
   async setAllowUnmuteSelf(allow: boolean): Promise<boolean> {
     if (!(await this.isInMeeting())) return false;
     // VERIFIED path: Host Tools → "Participants" submenu → "Unmute Themselves" switch.
-    const ht = await this.firstVisible(selectors.securityButton, 2000);
-    if (!ht) return false;
-    await ht.click().catch(() => void 0);
+    // Host Tools collapses into "More" on the narrow window, so open it via JS.
+    if (!(await this.jsClickToolbarControl(selectors.securityButton))) return false;
     await this.page.waitForTimeout(500);
     const sub = this.page.locator(".host-tools-panel__menu-button", { hasText: "Participants" }).first();
     await sub.click({ timeout: 2000 }).catch(() => void 0);
@@ -191,8 +190,94 @@ export class ZoomWebAdapter {
       /* eslint-enable @typescript-eslint/no-explicit-any */
     }, allow);
 
-    await this.page.keyboard.press("Escape").catch(() => void 0);
+    // Close the docked Host Tools panel so it doesn't stay on screen blocking
+    // the participants view (Escape alone often leaves the docked panel open).
+    await this.closeHostTools();
     return result === "ok";
+  }
+
+  /** Close the docked Host Tools panel (its own close/back control; Escape fallback). */
+  private async closeHostTools(): Promise<void> {
+    if (!(await this.jsClickOne(selectors.hostToolsClose.candidates))) {
+      await this.page.keyboard.press("Escape").catch(() => void 0);
+    }
+    await this.page.waitForTimeout(200);
+  }
+
+  /**
+   * If another device took host, a "Reclaim Host" banner appears and this
+   * co-host session can no longer admit or launch polls. Click it to take host
+   * back (as the original host, no host key is needed). Returns true if clicked.
+   */
+  async reclaimHostIfNeeded(): Promise<boolean> {
+    const clicked = await this.jsClickOne(selectors.reclaimHostButton.candidates);
+    if (!clicked) return false;
+    await this.page.waitForTimeout(700);
+    // Confirm if a dialog asks (click only a Reclaim-labelled button, never a
+    // generic OK that might belong to another dialog).
+    await this.page
+      .evaluate(() => {
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const doc = (globalThis as { document?: any }).document;
+        const dlgs: any[] = Array.from(doc.querySelectorAll('[role="dialog"], .zm-modal, [class*="modal" i]'));
+        for (const d of dlgs) {
+          for (const b of Array.from(d.querySelectorAll("button")) as any[]) {
+            const t = (b.getAttribute("aria-label") || "") + " " + (b.textContent || "");
+            if (/reclaim|reivindicar|recuperar/i.test(t)) { b.click(); return; }
+          }
+        }
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+      })
+      .catch(() => void 0);
+    this.log.info({}, "reclaimHost: reclaimed host from another device");
+    return true;
+  }
+
+  /** Turn the host's own microphone on (unmute / join audio) or off. EN + PT. */
+  async setMicOn(on: boolean): Promise<void> {
+    await this.jsClickOne(on ? selectors.micUnmute.candidates : selectors.micMute.candidates);
+  }
+
+  /** Turn the host's own camera on (start video) or off. EN + PT. */
+  async setCameraOn(on: boolean): Promise<void> {
+    await this.jsClickOne(on ? selectors.videoStart.candidates : selectors.videoStop.candidates);
+  }
+
+  /**
+   * Select the camera whose device name contains `label` (e.g. "OBS") from the
+   * video controls menu. Returns true if a matching camera was clicked. The
+   * device must exist (OBS's virtual camera only appears while OBS is running).
+   */
+  async selectCamera(label: string): Promise<boolean> {
+    if (!label.trim()) return false;
+    if (!(await this.jsClickToolbarControl(selectors.videoControlsButton))) return false;
+    await this.page.waitForTimeout(600);
+    const picked = await this.page
+      .evaluate(
+        (arg: { sels: string[]; label: string }) => {
+          /* eslint-disable @typescript-eslint/no-explicit-any */
+          const doc = (globalThis as { document?: any }).document;
+          const want = arg.label.toLowerCase();
+          const vis = (el: any) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const seen = new Set<any>();
+          for (const s of arg.sels) {
+            let nodes: any[] = [];
+            try { nodes = Array.from(doc.querySelectorAll(s)); } catch { nodes = []; }
+            for (const b of nodes) {
+              if (seen.has(b) || !vis(b)) continue;
+              seen.add(b);
+              const hay = ((b.getAttribute("aria-label") || "") + " " + (b.textContent || "")).toLowerCase();
+              if (hay.includes(want)) { b.click(); return true; }
+            }
+          }
+          return false;
+          /* eslint-enable @typescript-eslint/no-explicit-any */
+        },
+        { sels: selectors.cameraOption.candidates as string[], label },
+      )
+      .catch(() => false);
+    await this.page.keyboard.press("Escape").catch(() => void 0);
+    return picked;
   }
 
   /**
@@ -260,6 +345,47 @@ export class ZoomWebAdapter {
       return this.firstVisible(group, timeoutMs);
     }
     return null;
+  }
+
+  /**
+   * Click the first matching, rendered candidate via in-page JS. Viewport-
+   * independent (works for controls below the fold on the narrow window) and
+   * needs no trusted gesture — use it for everything EXCEPT share
+   * (getDisplayMedia needs a real click). Each querySelector is guarded so
+   * Playwright-only pseudo-selectors (":has-text") are skipped, and an optional
+   * class regex rejects unwanted matches (e.g. a same-aria Host Tools submenu).
+   */
+  private jsClickOne(cands: readonly string[], rejectClassRe?: string): Promise<boolean> {
+    return this.page.evaluate(
+      (arg: { cands: string[]; reject: string | null }) => {
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const doc = (globalThis as { document?: any }).document;
+        const rej = arg.reject ? new RegExp(arg.reject) : null;
+        for (const s of arg.cands) {
+          let b: any = null;
+          try { b = doc.querySelector(s); } catch { continue; }
+          if (!b) continue;
+          if (rej && rej.test((b.className || "").toString())) continue;
+          const r = b.getBoundingClientRect();
+          if (r.width <= 0 && r.height <= 0) continue;
+          b.click();
+          return true;
+        }
+        return false;
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+      },
+      { cands: cands as string[], reject: rejectClassRe ?? null },
+    );
+  }
+
+  /** JS-click a toolbar control that may be collapsed into the "More" overflow
+   *  menu on the narrow window. Tries direct, then opens More and retries. */
+  private async jsClickToolbarControl(group: SelectorGroup, rejectClassRe?: string): Promise<boolean> {
+    await this.revealControls();
+    if (await this.jsClickOne(group.candidates, rejectClassRe)) return true;
+    await this.jsClickOne(selectors.moreButton.candidates);
+    await this.page.waitForTimeout(500);
+    return this.jsClickOne(group.candidates, rejectClassRe);
   }
 
   /** True if a share is currently active (a visible "Stop Share" control exists,
@@ -390,16 +516,24 @@ export class ZoomWebAdapter {
    */
   private async openParticipantsPanel(): Promise<boolean> {
     if (await this.anyRowVisible()) return true;
-    // Bounded: a failing open must not hold the page lock long (it would starve
-    // auto-share, which runs under the same lock).
-    const toggle = await this.firstVisible(selectors.participantsToggle, 1200);
-    if (!toggle) return false;
-    await toggle.click().catch(() => void 0);
-    for (let i = 0; i < 6; i++) {
+    // The Participants toggle collapses into the "More" overflow menu on the
+    // narrow window, and a coordinate click can miss (footer below the fold) —
+    // so open it via JS (toolbar or More). Reject the Host Tools submenu button,
+    // which shares the aria-label "Participants". Bounded so a failing open does
+    // not hold the page lock long (it is serialized with auto-share).
+    const ok = await this.jsClickToolbarControl(selectors.participantsToggle, "host-tools-panel__menu-button");
+    if (!ok) return false;
+    for (let i = 0; i < 8; i++) {
       if (await this.anyRowVisible()) return true;
       await this.page.waitForTimeout(300);
     }
     return false;
+  }
+
+  /** Ensure the participants list is open so auto-admit and the roster keep
+   *  working. Safe to call every poll — no-ops when rows are already visible. */
+  async ensureParticipantsOpen(): Promise<boolean> {
+    return this.openParticipantsPanel();
   }
 
   /**
@@ -800,6 +934,9 @@ export class ZoomWebAdapter {
       unmuteParticipant: "experimental",
       hideBrowser: "experimental",
       launchPoll: "experimental",
+      reclaimHost: "experimental",
+      micCameraOnJoin: "experimental",
+      selectCamera: "experimental",
     };
   }
 }

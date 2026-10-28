@@ -180,8 +180,12 @@ export const SettingsSchema = z.object({
       joinMode: z.enum(["join", "start"]).default("join"),
       scheduledTime: z.string().nullable().default(null),
       autoStartMeeting: z.boolean().default(false),
-      micOnJoin: z.boolean().default(false),
-      cameraOnJoin: z.boolean().default(false),
+      /** As host, default to joining live: mic on and camera on. */
+      micOnJoin: z.boolean().default(true),
+      cameraOnJoin: z.boolean().default(true),
+      /** Preferred camera to select on join (substring match of the device
+       *  name, e.g. "OBS"). Empty = leave Zoom's current camera. */
+      cameraLabel: z.string().default(""),
     })
     .default({}),
   reconnect: z
@@ -214,6 +218,9 @@ export const SettingsSchema = z.object({
       /** Which poll to launch (matches the poll's name in Zoom). Empty = the
        *  first poll in the list. */
       pollName: z.string().default(""),
+      /** If another device takes host (a "Reclaim Host" banner appears), take
+       *  host back automatically. The PC must stay host to admit / launch polls. */
+      autoReclaimHost: z.boolean().default(true),
     })
     .default({}),
   browser: z
@@ -271,6 +278,7 @@ export const EventTypeSchema = z.enum([
   "zoom.share.started",
   "zoom.share.stopped",
   "zoom.poll.launched",
+  "zoom.host.reclaimed",
   "presentation.started",
   "presentation.ended",
   "meeting.loaded",
