@@ -166,6 +166,12 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return { hidden };
   });
 
+  app.post("/api/v1/zoom/poll/launch", admin, async () => {
+    ctx.db.audit("admin", "zoom.poll.launch", {});
+    const ok = await ctx.zoom.launchPoll();
+    return { ok };
+  });
+
   app.post("/api/v1/share/monitor/start", admin, async (_req, reply) => {
     ctx.db.audit("admin", "share.monitor.start", {});
     const ok = await ctx.zoom.startMonitorShare();

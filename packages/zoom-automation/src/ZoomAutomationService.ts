@@ -202,6 +202,19 @@ export class ZoomAutomationService {
         const okLock = await this.adapter.setAllowUnmuteSelf(false).catch(() => false);
         this.deps.log.info({ okLock }, "Applied lock-unmute on join");
       }
+      // Auto-launch a pre-created poll right after joining, if enabled. Give the
+      // meeting UI a moment to settle so the Polls control is reachable.
+      if (s.automations.autoLaunchPoll) {
+        await sleep(1500);
+        const okPoll = await this.launchPoll();
+        if (okPoll) {
+          this.deps.emit("zoom.poll.launched", { auto: true, pollName: s.automations.pollName || null });
+        } else {
+          this.deps.emit("system.warning", {
+            message: "Não consegui lançar a enquete automaticamente (confirme que a enquete está criada nesta reunião).",
+          });
+        }
+      }
       await this.applyVisibility();
       this.startPolling();
 
@@ -399,6 +412,19 @@ export class ZoomAutomationService {
   async unmuteParticipant(name: string): Promise<boolean> {
     const ok = (await this.adapter?.unmuteParticipant(name).catch(() => false)) ?? false;
     this.deps.log.info({ name, ok }, "Unmute participant requested");
+    return ok;
+  }
+
+  /**
+   * Launch a pre-created Zoom poll (host only). Serialized on the page lock so
+   * it never collides with participant scraping or a share operation. Uses the
+   * configured poll name, or the first poll when none is set.
+   */
+  async launchPoll(): Promise<boolean> {
+    if (!this.adapter) return false;
+    const name = this.deps.getSettings().automations.pollName?.trim() || undefined;
+    const ok = await this.runExclusive(() => this.adapter!.launchPoll(name)).catch(() => false);
+    this.deps.log.info({ name: name ?? "(first)", ok }, "Launch poll requested");
     return ok;
   }
 

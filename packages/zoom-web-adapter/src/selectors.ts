@@ -225,6 +225,43 @@ export const selectors = {
       'button[aria-label="More"]',
     ],
   },
+  /** Opens the Polls/Quizzes panel. VERIFIED: button aria-label="Polls"
+   *  (class more-button__item-box inside the More menu on a narrow window, or
+   *  footer-button__button directly in a wide toolbar). EN + PT. */
+  pollsButton: {
+    description: "Open the Polls/Quizzes panel (toolbar or More menu). EN + PT.",
+    candidates: [
+      'button[aria-label="Polls"]',
+      'button[aria-label*="Polls" i]',
+      'button[aria-label="Enquetes"]',
+      'button[aria-label*="Enquete" i]',
+      'button[aria-label*="Pesquisas" i]',
+      'button[aria-label*="Poll" i]',
+    ],
+  },
+  /** Marks that the Polls panel is open (VERIFIED: .poll-list-item rows, the
+   *  "Surveys & Polls" header). */
+  pollPanel: {
+    description: "Polls panel open marker (list container / rows / header)",
+    candidates: [
+      '.poll-list-item',
+      '.poll-list-container',
+      'text=/Surveys & Polls/i',
+      'text=/Polls\\/Quizzes/i',
+    ],
+  },
+  /** The "Launch" button on a poll row (VERIFIED: revealed on hover; class
+   *  poll-list-item__action-button; aria "Launch <poll name>"). EN + PT. */
+  pollLaunchButton: {
+    description: "Launch a poll from its row in the Polls panel (EN + PT)",
+    candidates: [
+      'button.poll-list-item__action-button',
+      'button[aria-label^="Launch" i]',
+      'button[aria-label^="Lançar" i]',
+      'button:has-text("Launch")',
+      'button:has-text("Lançar")',
+    ],
+  },
 } as const satisfies Record<string, SelectorGroup>;
 
 export type SelectorKey = keyof typeof selectors;

@@ -44,6 +44,7 @@ export const api = {
   lockUnmute: (lock: boolean) => req<unknown>("POST", "/zoom/lock-unmute", { lock }),
   unmuteParticipant: (name: string) => req<{ ok: boolean; name: string }>("POST", "/zoom/unmute", { name }),
   setBrowserHidden: (hidden: boolean) => req<unknown>("POST", "/zoom/browser/hidden", { hidden }),
+  launchPoll: () => req<{ ok: boolean }>("POST", "/zoom/poll/launch"),
   shareMonitorStart: () => req<unknown>("POST", "/share/monitor/start"),
   shareMonitorStop: () => req<unknown>("POST", "/share/monitor/stop"),
   shareStart: () => req<unknown>("POST", "/share/start"),

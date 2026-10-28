@@ -544,6 +544,69 @@ export class ZoomWebAdapter {
     return false;
   }
 
+  // -- polls -----------------------------------------------------------------
+
+  /**
+   * Launch a PRE-CREATED poll (host only). Opens the Polls panel — the "Polls"
+   * control sits directly in a wide toolbar but collapses into the "More"
+   * overflow menu on the narrow (hidden) window, so findToolbarControl looks in
+   * both places — then clicks the "Launch" button on the chosen poll row. That
+   * button is revealed on hover, so the row is hovered first. When `pollName` is
+   * given the matching row is used; otherwise the first poll in the list.
+   *
+   * Never creates a poll and never answers one — it only launches what the
+   * operator already built in the Zoom portal. Returns true when Launch was
+   * clicked. If the Polls control is absent (polls not enabled, or none attached
+   * to this meeting), returns false without throwing.
+   */
+  async launchPoll(pollName?: string): Promise<boolean> {
+    if (!(await this.isInMeeting())) return false;
+
+    const pollsBtn = await this.findToolbarControl(selectors.pollsButton, 3000);
+    if (!pollsBtn) {
+      this.log.warn({}, "launchPoll: Polls control not found (polls not enabled or not attached to this meeting)");
+      return false;
+    }
+    await pollsBtn.click({ force: true }).catch(() => void 0);
+    await this.page.waitForTimeout(1200);
+
+    if (!(await this.firstVisible(selectors.pollPanel, 3000))) {
+      this.log.warn({}, "launchPoll: Polls panel did not open");
+      return false;
+    }
+
+    const row = pollName
+      ? this.page.locator(".poll-list-item", { hasText: pollName }).first()
+      : this.page.locator(".poll-list-item").first();
+    if ((await row.count().catch(() => 0)) === 0) {
+      this.log.warn({ pollName }, "launchPoll: no poll row found in the panel");
+      return false;
+    }
+    await row.scrollIntoViewIfNeeded().catch(() => void 0);
+    await row.hover().catch(() => void 0); // reveal the per-row Launch button
+    await this.page.waitForTimeout(250);
+
+    // Prefer a Launch button scoped to the hovered row; fall back to a global one.
+    let launch: Locator | null = null;
+    for (const sel of selectors.pollLaunchButton.candidates) {
+      const b = row.locator(sel).first();
+      if ((await b.count().catch(() => 0)) > 0 && (await b.isVisible().catch(() => false))) {
+        launch = b;
+        break;
+      }
+    }
+    if (!launch) launch = await this.firstVisible(selectors.pollLaunchButton, 1500);
+    if (!launch) {
+      this.log.warn({ pollName }, "launchPoll: Launch button not found on the poll row");
+      return false;
+    }
+
+    await launch.click({ force: true }).catch(() => void 0);
+    await this.page.waitForTimeout(600);
+    this.log.info({ pollName: pollName ?? "(first)" }, "launchPoll: clicked Launch");
+    return true;
+  }
+
   // -- diagnostics (selector tuning / DOM-change detection) ------------------
 
   /**
@@ -665,6 +728,7 @@ export class ZoomWebAdapter {
       lockUnmute: "experimental",
       unmuteParticipant: "experimental",
       hideBrowser: "experimental",
+      launchPoll: "experimental",
     };
   }
 }

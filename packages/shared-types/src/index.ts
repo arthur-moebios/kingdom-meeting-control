@@ -209,6 +209,11 @@ export const SettingsSchema = z.object({
       autoAdmit: z.boolean().default(false),
       /** Turn off "allow participants to unmute themselves" on join. */
       lockUnmute: z.boolean().default(false),
+      /** Launch a pre-created Zoom poll automatically right after joining. */
+      autoLaunchPoll: z.boolean().default(false),
+      /** Which poll to launch (matches the poll's name in Zoom). Empty = the
+       *  first poll in the list. */
+      pollName: z.string().default(""),
     })
     .default({}),
   browser: z
@@ -265,6 +270,7 @@ export const EventTypeSchema = z.enum([
   "zoom.hand.lowered",
   "zoom.share.started",
   "zoom.share.stopped",
+  "zoom.poll.launched",
   "presentation.started",
   "presentation.ended",
   "meeting.loaded",

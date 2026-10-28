@@ -152,6 +152,14 @@ export function SettingsPanel({ displays, onClose, onSaved }: Props) {
           <legend>Automações de anfitrião</legend>
           <Check label="Admitir automaticamente da sala de espera" checked={form.automations.autoAdmit} onChange={(v) => setAutomations({ autoAdmit: v })} />
           <Check label="Impedir que participantes se desmutem (ao entrar)" checked={form.automations.lockUnmute} onChange={(v) => setAutomations({ lockUnmute: v })} />
+          <Check label="Lançar enquete automaticamente ao entrar" checked={form.automations.autoLaunchPoll} onChange={(v) => setAutomations({ autoLaunchPoll: v })} />
+          <Field label="Enquete (nome)">
+            <input value={form.automations.pollName} onChange={(e) => setAutomations({ pollName: e.target.value })} placeholder="(vazio = a primeira da lista)" />
+          </Field>
+          <p className="muted small">
+            A enquete precisa estar criada no portal do Zoom e vinculada a esta reunião. O sistema só
+            a lança — não cria perguntas. Deixe o nome vazio para lançar a primeira.
+          </p>
           <Check label="Ocultar o navegador (off-screen) após autenticar" checked={form.browser.hidden} onChange={(v) => setBrowser({ hidden: v })} />
           <p className="muted small">
             O navegador aparece durante o login e fica oculto depois. Não é headless, para o

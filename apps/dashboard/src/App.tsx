@@ -155,6 +155,12 @@ export function App() {
 function TransmissaoCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: RunNamed }) {
   const status = s.status;
   const inMeeting = status.state === "IN_MEETING" || status.state === "SHARING";
+  const hidden = s.settings.browser.hidden;
+  const toggleBrowser = () => run("vis", async () => {
+    const next = !hidden;
+    await api.setBrowserHidden(next);
+    await api.putSettings({ browser: { hidden: next } });
+  });
   const stateText = !status
     ? "Conectando…"
     : status.state === "INITIALIZING"
@@ -184,6 +190,10 @@ function TransmissaoCard({ s, busy, run }: { s: Snapshot; busy: string | null; r
       <div className="actions">
         <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("sharemon", () => api.shareMonitorStart())}>📺 Compartilhar</button>
         <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("sharestop", () => api.shareMonitorStop())}>Parar</button>
+        <button className="btn secondary small" disabled={!!busy} onClick={toggleBrowser} title="Mostra/esconde a janela do navegador do Zoom">
+          {hidden ? "👁 Ver Zoom" : "🙈 Ocultar Zoom"}
+        </button>
+        <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("poll", () => api.launchPoll())} title="Lança a enquete pré-criada no Zoom">📊 Lançar enquete</button>
       </div>
     </Card>
   );
@@ -345,8 +355,6 @@ function AdvancedSection({
           <div className="actions">
             <button className="btn secondary" disabled={!!busy} onClick={() => run("recover", () => api.recover())}>Recuperar navegador</button>
             <button className="btn secondary" disabled={!!busy} onClick={() => run("admit", () => api.admitAll())}>Admitir todos</button>
-            <button className="btn secondary" disabled={!!busy} onClick={() => run("hide", () => api.setBrowserHidden(true))}>Ocultar navegador</button>
-            <button className="btn secondary" disabled={!!busy} onClick={() => run("showb", () => api.setBrowserHidden(false))}>Mostrar navegador</button>
             <button className="btn secondary" disabled={!!busy} onClick={() => run("reconnect", async () => reconnect())}>Reconectar painel</button>
           </div>
         </Card>
