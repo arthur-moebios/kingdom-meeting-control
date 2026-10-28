@@ -42,7 +42,9 @@ export class AppContext {
         { matchedWindowTitle: status.matchedWindowTitle },
       );
       // Drive experimental auto-share from JW Library activity.
-      void this.zoom.onPresentationChange(status.presentationActive);
+      void this.zoom.onPresentationChange(status.presentationActive).catch(err =>
+        this.logger.warn({ err: String(err) }, "Presentation share transition failed"),
+      );
     });
 
     this.zoom = new ZoomAutomationService({
@@ -52,6 +54,12 @@ export class AppContext {
       zoomWebUrl: cfg.zoomWebUrl,
       getSettings: () => this.settings,
       isPresentationActive: () => this.presentation.getStatus().presentationActive,
+      getMediaWindowHandle: () => this.presentation.getStatus().mediaWindowHandle,
+      isMediaCaptureReady: () => {
+        const status = this.presentation.getStatus();
+        return status.detectionSource === "uia" && status.mediaWindowCaptureReady &&
+          Date.now() - Date.parse(status.updatedAt) < 2500;
+      },
       emit: (type, data) => this.bus.publish(type, data),
       driveSharePicker: (sourceTitle, audio) => this.driveSharePicker(sourceTitle, audio),
     });
@@ -101,6 +109,8 @@ export class AppContext {
         "powershell.exe",
         [
           "-NoProfile",
+          "-NonInteractive",
+          "-Mta",
           "-ExecutionPolicy",
           "Bypass",
           "-File",
@@ -109,20 +119,27 @@ export class AppContext {
           sourceTitle,
           "-Audio",
           audio ? "1" : "0",
+          "-BrowserProfileDir",
+          this.cfg.chromiumProfileDir,
+          "-MediaWindowHandle",
+          String(this.presentation.getStatus().mediaWindowHandle ?? 0),
         ],
         { windowsHide: true },
       );
       let out = "";
+      const timeout = setTimeout(() => ps.kill(), 20_000);
       ps.stdout?.on("data", (d: Buffer) => (out += d.toString()));
       ps.on("error", (err) => {
+        clearTimeout(timeout);
         this.logger.warn({ err: String(err) }, "share-picker spawn error");
         resolve(false);
       });
-      ps.on("close", () => {
-        const ok = /\bOK\b/.test(out);
+      ps.on("close", (code) => {
+        clearTimeout(timeout);
+        const ok = code === 0 && /^OK\r?$/m.test(out);
         this.logger.info(
           { sourceTitle, audio, ok, out: out.trim().slice(0, 200) },
-          "share-picker finished",
+          `share-picker finished: ${out.trim().slice(0, 200) || "no output"}`,
         );
         resolve(ok);
       });

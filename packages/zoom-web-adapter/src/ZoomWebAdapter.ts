@@ -361,8 +361,9 @@ export class ZoomWebAdapter {
   /**
    * Click the first matching, rendered candidate via in-page JS. Viewport-
    * independent (works for controls below the fold on the narrow window) and
-   * needs no trusted gesture — use it for everything EXCEPT share
-   * (getDisplayMedia needs a real click). Each querySelector is guarded so
+   * runs with Chromium transient user activation supplied by Playwright.
+   * This also permits capture activation without coordinate clicks.
+   * Each querySelector is guarded so
    * Playwright-only pseudo-selectors (":has-text") are skipped, and an optional
    * class regex rejects unwanted matches (e.g. a same-aria Host Tools submenu).
    */
@@ -408,23 +409,47 @@ export class ZoomWebAdapter {
     return sharing;
   }
 
-  /**
-   * Click Zoom's Share button to open the native getDisplayMedia picker. The
-   * click MUST be a trusted input event (getDisplayMedia requires user
-   * activation), so we use a real Playwright click (never a JS .click(), which
-   * would be untrusted and rejected). Share collapses into the "More" menu on a
-   * narrow window, so findToolbarControl looks there too.
-   */
+  /** Start capture under Chromium user activation, even with the toolbar
+   * outside the viewport. The service already checks the meeting state.
+   * Playwright's Chromium evaluate uses Runtime.callFunctionOn/userGesture=true;
+   * getDisplayMedia checks transient user activation, not event.isTrusted. */
   async startMonitorShare(): Promise<boolean> {
-    if (!(await this.isInMeeting())) return false;
-    const btn = await this.findToolbarControl(selectors.shareButton, 3000);
-    if (!btn) {
-      this.log.warn({}, "startMonitorShare: Share button not found (toolbar or More menu)");
+    if (await this.jsClickOne(selectors.shareButton.candidates)) return true;
+    if (await this.jsClickOne(selectors.moreButton.candidates)) {
+      try {
+        await this.page.locator(selectors.shareButton.candidates.join(",")).first()
+          .waitFor({ state: "attached", timeout: 1000 });
+        if (await this.jsClickOne(selectors.shareButton.candidates)) return true;
+      } catch { /* report below */ }
+    }
+    this.log.warn({}, "Share activation failed: no rendered Share control in toolbar or More menu");
+    return false;
+  }
+
+  async waitForSharing(timeoutMs: number): Promise<boolean> {
+    try {
+      await Promise.any(selectors.stopShareButton.candidates.map(selector =>
+        this.page.locator(selector).first().waitFor({ state: "attached", timeout: timeoutMs })));
+      return true;
+    } catch {
+      const diagnostic = await this.page.evaluate(() => {
+        const state = globalThis as unknown as {
+          __kmcCaptureError?: string;
+          __kmcCaptureStream?: { getVideoTracks: () => { readyState: string; label: string }[] };
+        };
+        return { error: state.__kmcCaptureError ?? null,
+          tracks: state.__kmcCaptureStream?.getVideoTracks().map(t => ({ state: t.readyState, label: t.label })) ?? [] };
+      }).catch(() => null);
+      this.log.warn({ diagnostic }, `Share confirmation failed: ${JSON.stringify(diagnostic)}`);
       return false;
     }
-    await btn.click().catch(() => void 0);
-    await this.page.waitForTimeout(500);
-    return true;
+  }
+
+  async setExpectedMediaWindow(handle: number | null): Promise<void> {
+    await this.page.evaluate(value => {
+      (globalThis as { __kmcExpectedMediaWindow?: number | null }).__kmcExpectedMediaWindow = value;
+      (globalThis as { __kmcCaptureError?: string | null }).__kmcCaptureError = null;
+    }, handle);
   }
 
   /**
@@ -671,6 +696,40 @@ export class ZoomWebAdapter {
    * the job; we then confirm the control is gone.
    */
   async stopScreenShareClick(): Promise<boolean> {
+    // End the actual capture immediately, independently of toolbar visibility.
+    // MediaStreamTrack.stop() does not emit ended itself; notify Zoom's listener
+    // after stopping, just as the browser's own stop-capture UI would.
+    const tracksStopped = await this.page.evaluate(() => {
+      type Track = { readyState: string; stop: () => void; dispatchEvent: (event: unknown) => void };
+      const state = globalThis as unknown as {
+        __kmcCaptureStream?: { getTracks: () => Track[] };
+        Event: new (type: string) => unknown;
+      };
+      const tracks = state.__kmcCaptureStream?.getTracks().filter(t => t.readyState === "live") ?? [];
+      for (const track of tracks) { track.stop(); track.dispatchEvent(new state.Event("ended")); }
+      state.__kmcCaptureStream = undefined;
+      return tracks.length > 0;
+    }).catch(() => false);
+    if (tracksStopped) {
+      this.log.info({}, "Capture tracks stopped immediately");
+      return true;
+    }
+    // Stop requires no trusted activation. A DOM click also works when Zoom's
+    // share toolbar is auto-hidden, avoiding mouse sweeps and overflow delays.
+    for (const selector of selectors.stopShareButton.candidates) {
+      const control = this.page.locator(selector).first();
+      if (await control.count().catch(() => 0)) {
+        const clicked = await control.evaluate(element => {
+          (element as unknown as { click: () => void }).click();
+        }).then(() => true, () => false);
+        if (clicked) {
+          try {
+            await control.waitFor({ state: "detached", timeout: 1500 });
+            return true;
+          } catch { break; }
+        }
+      }
+    }
     for (let attempt = 0; attempt < 3; attempt++) {
       const btn = await this.findToolbarControl(selectors.stopShareButton, 1500);
       if (btn) {

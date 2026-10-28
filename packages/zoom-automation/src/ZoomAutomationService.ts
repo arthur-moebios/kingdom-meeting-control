@@ -33,6 +33,9 @@ export interface ZoomAutomationDeps {
    * Returns true when the share was confirmed. Absent off Windows.
    */
   driveSharePicker?: (sourceTitle: string, audio: boolean) => Promise<boolean>;
+  /** Fresh UIA identity/order check before Chromium automatically selects JW. */
+  isMediaCaptureReady?: () => boolean;
+  getMediaWindowHandle?: () => number | null;
 }
 
 /**
@@ -59,6 +62,7 @@ export class ZoomAutomationService {
   // Only one share operation runs at a time.
   private starting = false;
   private stopping = false;
+  private preparingMeeting = false;
   // Serializes ALL page interactions (participant scraping, admit, share
   // start/stop) so they never run concurrently on the same Playwright page.
   // Concurrent DOM work was clicking the participants toggle underneath the
@@ -74,8 +78,8 @@ export class ZoomAutomationService {
         startUrl: deps.zoomWebUrl,
         // Experimental auto-share capture flag only when auto mode is configured.
         captureSourceTitle:
-          s0.share.mode === "automatic" && s0.share.autoSourceTitle
-            ? s0.share.autoSourceTitle
+          s0.share.mode === "automatic"
+            ? s0.share.autoSourceTitle || "JW Library"
             : undefined,
       },
       deps.log,
@@ -179,6 +183,7 @@ export class ZoomAutomationService {
       throw new Error(`Cannot join from state ${this.sm.state}`);
     }
 
+    this.preparingMeeting = true;
     try {
       const ok = await this.adapter.joinMeeting({
         meetingId: s.meeting.meetingId,
@@ -230,6 +235,7 @@ export class ZoomAutomationService {
       // Keep the participants list open so auto-admit and the roster keep working.
       await this.adapter.ensureParticipantsOpen().catch(() => void 0);
       await this.applyVisibility();
+      this.preparingMeeting = false;
       this.startPolling();
 
       // If a presentation is ALREADY active when we join, auto-share now — the
@@ -240,6 +246,8 @@ export class ZoomAutomationService {
       }
     } catch (err) {
       this.fail(err);
+    } finally {
+      this.preparingMeeting = false;
     }
   }
 
@@ -289,6 +297,7 @@ export class ZoomAutomationService {
     this.stopPolling();
     const tick = async (): Promise<void> => {
       if (!this.adapter) return;
+      if (this.starting || this.stopping) return;
       try {
         const s = this.deps.getSettings();
         // Keep host: if another device grabbed it, a "Reclaim Host" banner shows
@@ -308,6 +317,7 @@ export class ZoomAutomationService {
         // management isn't needed during a (short) projection anyway.
         if (!this.sharing) {
           await this.runExclusive(async () => {
+            if (this.starting || this.stopping) return;
             // Keep the participants list open so auto-admit + the roster work
             // (the toggle collapses into "More"; ensureParticipantsOpen handles
             // that and no-ops when rows are already visible).
@@ -490,54 +500,61 @@ export class ZoomAutomationService {
     await this.chromium.setHidden(hidden);
   }
 
-  /**
-   * Start sharing the JW Library window (projector content). Reveals Zoom's
-   * toolbar + clicks Share to open the native picker, then (on Windows) drives
-   * the picker to select the JW Library window + enable system audio + Share.
-   * `sharing` is only set once the picker confirms, so a cancelled/failed pick
-   * doesn't leave the state stuck.
-   */
+  /** Start capture without exposing Chromium or driving a native picker in automatic mode. */
   async startMonitorShare(): Promise<boolean> {
     if (!this.adapter) return false;
-    if (this.sharing) return true; // already sharing — don't re-open the picker
-    if (this.starting || this.stopping) return false; // another op is in flight
+    if (this.sm.state !== "IN_MEETING" && this.sm.state !== "SHARING") return false;
+    if (this.sharing) return true;
+    if (this.starting || this.stopping) return false;
     this.starting = true;
+    const requestedAt = Date.now();
     try {
       return await this.runExclusive(async () => {
         const s = this.deps.getSettings();
         const title = s.share.autoSourceTitle || "JW Library";
-        const audio = s.share.shareAudio !== false; // default ON (JW media has audio)
-
-        // Retry the open + pick a few times — the toolbar reveal, the Share click, or
-        // the window list populating can intermittently miss on the first try.
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          const opened = await this.adapter!.startMonitorShare();
-          if (!opened) {
-            await sleep(500);
-            continue;
-          }
-          const picked = this.deps.driveSharePicker
-            ? await this.deps.driveSharePicker(title, audio).catch(() => false)
-            : false;
-          if (picked) {
-            this.sharing = true;
-            if (this.sm.state === "IN_MEETING") this.sm.transition("SHARING");
-            this.deps.emit("zoom.share.started", { auto: true, source: title, audio, attempt });
-            return true;
-          }
-          this.deps.log.warn({ title, attempt }, "Share picker did not complete; retrying");
-          await sleep(600);
+        const automatic = s.share.mode === "automatic";
+        if (automatic && this.chromium.captureSourceTitle !== title) {
+          this.deps.log.warn({}, "Auto-capture source changed; restart the browser to apply it");
+          return false;
         }
-        this.deps.log.error({ title }, "Auto-share failed after retries (operator can share manually)");
-        return false;
+        if (title === "JW Library" && !this.deps.isMediaCaptureReady?.()) {
+          this.deps.log.warn({}, "JW media window identity/order unavailable; refusing an ambiguous source");
+          return false;
+        }
+        // Do not begin a stale request after waiting behind a page operation.
+        if (automatic && !this.deps.isPresentationActive()) return false;
+        await this.adapter!.setExpectedMediaWindow(
+          title === "JW Library" ? this.deps.getMediaWindowHandle?.() ?? null : null,
+        );
+        const opened = await this.adapter!.startMonitorShare();
+        if (!opened) return false;
+        if (!automatic) {
+          const picked = await this.deps.driveSharePicker?.(title, s.share.shareAudio).catch(() => false);
+          if (!picked) return false;
+        }
+        // Chromium's window-only auto-selection bypasses the native picker.
+        // Confirm the actual Zoom control, without a fixed post-click sleep.
+        if (!(await this.adapter!.waitForSharing(5000))) {
+          this.deps.log.warn({}, "Zoom did not confirm sharing after the capture request");
+          return false;
+        }
+        // Starting display capture can restore Chromium's off-screen window.
+        // Reapply the operator's preference once the stream is established.
+        await this.applyVisibility();
+        this.sharing = true;
+        if (this.sm.state === "IN_MEETING") this.sm.transition("SHARING");
+        const elapsedMs = Date.now() - requestedAt;
+        this.deps.log.info({ elapsedMs, source: title }, "Share confirmed after " + elapsedMs + "ms");
+        this.deps.emit("zoom.share.started", { auto: automatic, source: title, elapsedMs });
+        return true;
       });
     } finally {
       this.starting = false;
+      if (this.sharing && !this.deps.isPresentationActive()) this.scheduleAutoStop();
     }
   }
 
-  /** Debounced auto-stop: stop sharing if the presentation is still gone after a
-   *  short delay (so a brief dark video frame does not end the share). */
+  /** UIA is independent of dark video frames; only coalesce a short tree transition. */
   private scheduleAutoStop(): void {
     if (!this.sharing || this.autoStopTimer) return;
     this.autoStopTimer = setTimeout(() => {
@@ -546,7 +563,7 @@ export class ZoomAutomationService {
         this.deps.log.info({}, "Auto-stop: presentation ended → stopping share");
         void this.stopMonitorShare();
       }
-    }, 4000);
+    }, 100);
     this.autoStopTimer.unref();
   }
 
@@ -554,6 +571,7 @@ export class ZoomAutomationService {
     if (!this.sharing && !this.adapter) return;
     if (this.stopping || this.starting) return; // another op is in flight
     this.stopping = true;
+    const requestedAt = Date.now();
     try {
       // The adapter confirms (returns true) only when the share actually ended.
       const confirmed = this.adapter
@@ -563,6 +581,7 @@ export class ZoomAutomationService {
         this.sharing = false;
         if (this.sm.state === "SHARING") this.sm.transition("IN_MEETING");
         this.deps.emit("zoom.share.stopped", {});
+        this.deps.log.info({}, `Stop confirmed after ${Date.now() - requestedAt}ms`);
       } else {
         // Keep sharing=true so the status stays honest (we are, in fact, still
         // sharing) and the backup auto-stop / operator retries instead of the UI
@@ -572,6 +591,9 @@ export class ZoomAutomationService {
       }
     } finally {
       this.stopping = false;
+      // A new medium can arrive while the previous capture is being stopped.
+      // Start it now instead of waiting for the three-second reconcile tick.
+      if (!this.sharing && this.deps.isPresentationActive()) void this.onPresentationChange(true);
     }
   }
 
@@ -590,6 +612,7 @@ export class ZoomAutomationService {
   async onPresentationChange(active: boolean): Promise<void> {
     const s = this.deps.getSettings();
     if (s.share.mode !== "automatic") return;
+    if (this.preparingMeeting) return; // join checks current media after setup
     if (this.sm.state !== "IN_MEETING" && this.sm.state !== "SHARING") return;
 
     if (active) {

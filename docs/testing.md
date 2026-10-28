@@ -9,6 +9,10 @@ Vitest covers the pure, deterministic logic that does NOT need a live Zoom:
 - **`ZoomParticipantsService`** — join/leave diffs, hand raise/lower,
   detection-time ordering, and the virtualization guard (no false "left" events
   when the list is partial).
+- **`JwMediaWatcher` / `PresentationMonitorService`** — JSON line framing,
+  invalid readings, worker restarts/shutdown, hang detection, immediate activity
+  changes, event deduplication, and preserving activity on observation failure.
+  These tests mock the worker; actual JW selectors require live validation.
 
 These are the parts we can verify with confidence. Everything that touches the
 Zoom DOM is validated manually against a real meeting (below), because faking it
@@ -48,6 +52,16 @@ in `limitations.md`.
 - [ ] Operator can pick the projector monitor; dashboard is NOT shared by
       accident.
 - [ ] Media audio sharing availability — record what the Web client offers.
+
+### JW Library automatic detection
+- [ ] Status reports `detectionSource=uia` with JW open and no media active.
+- [ ] Images and videos trigger sharing, including muted video and dark scenes.
+- [ ] Hiding playback controls does not incorrectly end the share.
+- [ ] Ending media stops capture promptly after the 100ms coalescing delay.
+- [ ] Closing/reopening JW reattaches the observer; the remote viewer receives
+      the intended media and audio. Record detection and Zoom-start latency.
+- [ ] Observer failure reports unavailable without stopping an ongoing share.
+See [JW detection](jw-media-detection.md) for selectors and implementation limits.
 
 ### Resilience
 - [ ] Kill the Chromium window → state goes ERROR, server stays up, event

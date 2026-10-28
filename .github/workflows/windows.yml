@@ -51,6 +51,9 @@ jobs:
           Copy-Item (Get-Command node).Source pkg\node.exe
           Copy-Item scripts\win\install-autostart.ps1 pkg\
           Copy-Item scripts\win\share-picker.ps1 pkg\
+          Copy-Item scripts\win\watch-jw-media.ps1 pkg\
+          Copy-Item scripts\win\JwMediaObserver.cs pkg\
+          Copy-Item scripts\win\JwMediaWindows.cs pkg\
           Copy-Item scripts\win\LEIA-ME.txt pkg\
 
           # WebView2 SDK (native window host). Download the NuGet package and

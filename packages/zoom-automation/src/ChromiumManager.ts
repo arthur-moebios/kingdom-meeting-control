@@ -1,5 +1,6 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
 import fs from "node:fs";
+import { captureControlScript } from "./captureControl.js";
 
 export interface ChromiumLogger {
   info: (obj: unknown, msg?: string) => void;
@@ -11,9 +12,8 @@ export interface ChromiumOptions {
   profileDir: string;
   headless: boolean;
   startUrl: string;
-  /** EXPERIMENTAL: when set, Chromium auto-selects the desktop capture source
-   *  whose title contains this string (the projector screen), bypassing the
-   *  native picker. Fragile — validate live. */
+  /** Auto-select a window by title without exposing the native picker.
+   *  The capture guard verifies the returned HWND before Zoom gets the stream. */
   captureSourceTitle?: string;
 }
 
@@ -37,6 +37,10 @@ export class ChromiumManager {
 
   get isRunning(): boolean {
     return this.context !== null;
+  }
+
+  get captureSourceTitle(): string | undefined {
+    return this.opts.captureSourceTitle;
   }
 
   getPage(): Page | null {
@@ -71,8 +75,7 @@ export class ChromiumManager {
     if (this.opts.captureSourceTitle) {
       // Experimental auto-share: pick the matching screen without the OS picker.
       args.push(
-        `--auto-select-desktop-capture-source=${this.opts.captureSourceTitle}`,
-        `--auto-select-desktop-capture-source-by-title=${this.opts.captureSourceTitle}`,
+        `--auto-select-window-capture-source-by-title=${this.opts.captureSourceTitle}`,
       );
     }
 
@@ -83,6 +86,7 @@ export class ChromiumManager {
       permissions: ["camera", "microphone"],
       args,
     });
+    await this.context.addInitScript(captureControlScript);
 
     // Detect the browser being closed (by crash or by a human) so the
     // orchestrator can react / restart.

@@ -57,19 +57,13 @@ Legend: ✅ works · 🟡 implemented but **needs live validation** · 🔬 expe
   captures fine (not black). Sharing the window (not the monitor) is also safer:
   nothing else on the screen leaks.
 - Stop share. ✅ clicks Zoom's "Stop Share".
-- **Automatic TRIGGER works. ✅ VERIFIED end‑to‑end.** JW Library (UWP) renders
-  media without a new window, so window enumeration is useless — but the
-  projector monitor is **pure black (avg ~3) when idle and jumps to ~49 when
-  presenting**. `PresentationMonitorService` samples the projector's average
-  brightness (hysteresis 12/6) + JW running → `presentationActive`, and the
-  automatic share then starts on the next poll tick (and on join if already
-  active). Confirmed: JW media auto‑broadcast with no manual action, seen by a
-  second viewer. Note: the controller session must be the meeting HOST (a
-  co‑host can be blocked by "only host can share"); a host‑change modal
-  ("Reclaim Host") blocks the panel/share until dismissed, but that only arises
-  if someone takes host — it does not happen for a sole‑host Kingdom Hall PC.
-- Does NOT auto‑stop when the presentation ends (keeps sharing across a sequence,
-  per spec); the operator stops it.
+- **Automatic trigger via UI Automation.** 🟡 implemented (2026-10-28), replacing
+  projector-brightness polling. A persistent worker observes JW media controls
+  and invokes the existing share flow on change. The idle JW Library case has
+  been checked locally; image/video transitions and broadcast latency still
+  need live validation. See [JW detection](jw-media-detection.md).
+- Automatic stop waits 100ms after the media context disappears;
+  temporary observation failures preserve the last activity state.
 - **System/media audio sharing.** 🔬 getDisplayMedia requested audio too; whether
   JW media audio actually rides along is unconfirmed — validate with sound.
 - Config: `share.mode="automatic"` + `share.autoSourceTitle="JW Library"` enables
@@ -79,10 +73,11 @@ Legend: ✅ works · 🟡 implemented but **needs live validation** · 🔬 expe
 - Enumerate displays. 🟡 via PowerShell/WMI query; stable monitor ids are
   best‑effort.
 - Identify projector vs. primary. 🟡 heuristic + operator confirmation.
-- Detect JW Library windows / presentation open‑close. 🔬 window‑title heuristic;
-  no deep integration (we must **not** control JW Library).
-- Event‑driven detection via `SetWinEventHook`/UIAutomation. ⛔ not yet; current
-  implementation polls on an interval.
+- Read-only UI Automation media detection. 🟡 event subscriptions plus a one-second
+  reconciliation scan; no projector brightness threshold. Selectors are adapted
+  from JarbasJWL and may require updates when JW Library changes its UI.
+- A media UI context is not proof of actual projection or playback. Validate
+  images, muted videos, hidden controls, and JW restart locally before use.
 
 ## Server / security
 - REST + WebSocket + SQLite + state machine. ✅

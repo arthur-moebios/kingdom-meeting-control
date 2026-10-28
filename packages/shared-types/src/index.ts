@@ -110,11 +110,14 @@ export const PresentationStatusSchema = z.object({
   presentationActive: z.boolean(),
   /** Window title we matched, if any (diagnostic only). null otherwise. */
   matchedWindowTitle: z.string().nullable(),
-  /** Latest projector brightness reading (0-255), or null. Diagnostic: lets the
-   *  operator see what the detector reads and calibrate the ON/OFF thresholds. */
+  /** Legacy brightness diagnostics; UIA detection does not sample the screen. */
   brightness: z.number().nullable().default(null),
   /** Which display (id) the brightness came from, for diagnostics. */
   brightnessDisplayId: z.string().nullable().default(null),
+  detectionSource: z.enum(["uia", "unavailable"]).default("unavailable"),
+  mediaKind: z.enum(["video", "image"]).nullable().default(null),
+  mediaWindowHandle: z.number().int().positive().nullable().default(null),
+  mediaWindowCaptureReady: z.boolean().default(false),
   updatedAt: z.string().datetime(),
 });
 export type PresentationStatus = z.infer<typeof PresentationStatusSchema>;

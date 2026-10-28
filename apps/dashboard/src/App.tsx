@@ -389,7 +389,7 @@ function AdvancedSection({
 }) {
   const [logs, setLogs] = useState<{ time: string; levelLabel: string; msg: string }[]>([]);
   const [net, setNet] = useState<{ addresses: string[]; port: number; tabletUrls: string[] } | null>(null);
-  const [pres, setPres] = useState<{ brightness: number | null; brightnessDisplayId: string | null; presentationActive: boolean } | null>(null);
+  const [pres, setPres] = useState<Awaited<ReturnType<typeof api.presentationStatus>> | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -430,7 +430,7 @@ function AdvancedSection({
               <tr><td>Monitor projetor</td><td>{s.settings.share.projectorDisplayId ?? "não definido"}</td></tr>
               <tr><td>Apresentação ativa</td><td><Dot on={(pres ?? s.presentation).presentationActive} /> {(pres ?? s.presentation).presentationActive ? "sim" : "não"}</td></tr>
               <tr><td>JW Library detectado</td><td><Dot on={s.presentation.jwLibraryDetected} /> {s.presentation.jwLibraryDetected ? "sim" : "não"}</td></tr>
-              <tr><td>Brilho projetor</td><td><b>{pres?.brightness ?? "—"}</b> {pres?.brightnessDisplayId ? `(${pres.brightnessDisplayId.replace(/\\\\\.\\/, "")})` : ""} <span className="muted">· liga ≥25, desliga ≤12</span></td></tr>
+              <tr><td>Detecção de mídia</td><td>{(pres ?? s.presentation).detectionSource === "uia" ? "UI Automation" : "indisponível"} · {(pres ?? s.presentation).mediaKind === "video" ? "vídeo" : (pres ?? s.presentation).mediaKind === "image" ? "imagem" : "sem mídia detectada"}</td></tr>
             </tbody>
           </table>
           <div className="actions">
