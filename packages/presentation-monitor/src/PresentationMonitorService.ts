@@ -38,6 +38,7 @@ export class PresentationMonitorService {
     updatedAt: new Date().toISOString(),
   };
   private timer: NodeJS.Timeout | null = null;
+  private refreshing = false;
   private readonly isWindows = os.platform() === "win32";
 
   // Full-projector average brightness (0-255). Calibrated live (2026-10-27):
@@ -205,6 +206,18 @@ ${avgLines}
 
   /** One observation cycle: JW running + projector brightness → presentationActive. */
   private async refresh(): Promise<void> {
+    // Skip if a probe is still running (PowerShell spawn + screen capture can
+    // occasionally exceed the poll interval), so we never overlap spawns.
+    if (this.refreshing) return;
+    this.refreshing = true;
+    try {
+      await this.refreshOnce();
+    } finally {
+      this.refreshing = false;
+    }
+  }
+
+  private async refreshOnce(): Promise<void> {
     const { jw, brightness, displayId } = await this.probe();
 
     // Hysteresis: turn ON above ON_THRESHOLD, OFF below OFF_THRESHOLD, else hold.
@@ -236,7 +249,7 @@ ${avgLines}
     }
   }
 
-  start(projectorDisplayId: string | null, intervalMs = 1200): void {
+  start(projectorDisplayId: string | null, intervalMs = 800): void {
     if (!this.isWindows) return;
     this.stop();
     void this.enumerateDisplays(projectorDisplayId).then(() => void this.refresh());

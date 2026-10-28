@@ -128,6 +128,7 @@ export function App() {
             </div>
             <div className="col-side">
               <TransmissaoCard s={s} busy={busy} run={run} />
+              <RemoteQrCard />
               <HandsCard s={s} busy={busy} run={run} />
               <EnquetesCard busy={busy} run={run} lastEvent={lastEvent} />
               <ParticipantsCard s={s} busy={busy} run={run} />
@@ -422,8 +423,6 @@ function AdvancedSection({
           ) : <p className="muted">Descobrindo endereços da rede…</p>}
         </Card>
 
-        <RemoteQrCard net={net} />
-
         <Card icon="📺" title="Compartilhamento">
           <table className="kv">
             <tbody>
@@ -483,32 +482,52 @@ function AdvancedSection({
 }
 
 /* ----------------------------------------------------- Controle remoto (QR) */
-// Prefer a real LAN IP (phone on the same Wi-Fi) over Tailscale/CGNAT (100.64/10).
-function bestLanAddr(addrs: string[]): string | undefined {
-  const score = (ip: string) =>
-    ip.startsWith("192.168.") ? 0 : ip.startsWith("10.") ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : ip.startsWith("100.") ? 9 : 5;
-  return [...addrs].sort((a, b) => score(a) - score(b))[0];
+// Only a real private LAN IP (phone on the same Wi-Fi). Tailscale/CGNAT (100.64/10)
+// is excluded — it is not on everyone's devices.
+function lanAddr(addrs: string[]): string | undefined {
+  const lan = addrs.filter((ip) => /^192\.168\./.test(ip) || /^10\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip));
+  const score = (ip: string) => (ip.startsWith("192.168.") ? 0 : ip.startsWith("10.") ? 1 : 2);
+  return [...lan].sort((a, b) => score(a) - score(b))[0];
 }
-function RemoteQrCard({ net }: { net: { addresses: string[]; port: number } | null }) {
-  const addr = net ? bestLanAddr(net.addresses) : undefined;
-  const url = addr ? `http://${addr}:${net!.port}/remote.html` : "";
-  const [dataUrl, setDataUrl] = useState("");
+function RemoteQrCard() {
+  const [net, setNet] = useState<{ addresses: string[]; port: number } | null>(null);
+  const [small, setSmall] = useState("");
+  const [large, setLarge] = useState("");
+  const [big, setBig] = useState(false);
   useEffect(() => {
-    if (!url) return;
-    QRCode.toDataURL(url, { width: 400, margin: 1 }).then(setDataUrl).catch(() => void 0);
+    api.net().then((n) => setNet({ addresses: n.addresses, port: n.port })).catch(() => void 0);
+  }, []);
+  const addr = net ? lanAddr(net.addresses) : undefined;
+  const url = addr ? `http://${addr}:${net!.port}/remote.html` : "";
+  useEffect(() => {
+    if (!url) { setSmall(""); setLarge(""); return; }
+    QRCode.toDataURL(url, { width: 240, margin: 1 }).then(setSmall).catch(() => void 0);
+    QRCode.toDataURL(url, { width: 640, margin: 2 }).then(setLarge).catch(() => void 0);
   }, [url]);
   return (
     <Card icon="📱" title="Controle remoto (celular)">
-      {dataUrl ? (
-        <img className="qr" src={dataUrl} alt="QR do controle do cronômetro" />
+      {url ? (
+        <>
+          <div className="qr-row">
+            <img className="qr-sm" src={small} alt="QR do controle do cronômetro" onClick={() => setBig(true)} title="Toque para ampliar" />
+            <div className="qr-info">
+              <p className="muted small">Escaneie para abrir o <b>controle do cronômetro</b> no celular. Toque no QR para ampliar e mostrar.</p>
+              <code className="qr-url">{url}</code>
+            </div>
+          </div>
+          {big && (
+            <div className="overlay" onClick={() => setBig(false)}>
+              <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
+                <img src={large} alt="QR grande do controle do cronômetro" />
+                <code className="qr-url">{url}</code>
+                <button className="btn secondary" onClick={() => setBig(false)}>Fechar</button>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
-        <p className="muted small">Descobrindo endereço da rede…</p>
+        <p className="muted small">Sem IP de rede local (conecte o PC ao Wi-Fi do Salão). O Tailscale não serve — não está nos aparelhos de todos.</p>
       )}
-      <p className="muted small">
-        Escaneie com o celular para abrir o <b>controle do cronômetro</b> (iniciar / pausar / próxima).
-        Qualquer pessoa na mesma rede Wi-Fi pode usar.
-      </p>
-      {url && <code className="qr-url">{url}</code>}
     </Card>
   );
 }

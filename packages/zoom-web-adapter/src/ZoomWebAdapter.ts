@@ -342,10 +342,18 @@ export class ZoomWebAdapter {
     timeoutMs: number,
   ): Promise<Locator | null> {
     await this.revealControls();
-    const direct = await this.firstVisible(group, Math.min(timeoutMs, 1200));
-    if (direct) return direct;
+    // Fast direct check: a toolbar control, if present, is ALREADY visible right
+    // after revealControls — so test instantly with isVisible(). The old
+    // firstVisible here waited up to `timeout` PER candidate, burning up to
+    // candidates×1200ms (≈4.8s for Share's 4 candidates) before falling through
+    // to the More menu — that was the >4s auto-share trigger latency.
+    for (const sel of group.candidates) {
+      const loc = this.page.locator(sel).first();
+      if (await loc.isVisible().catch(() => false)) return loc;
+    }
+    // Not in the toolbar → open the "More" overflow menu and look there.
     if (await this.openMoreMenu()) {
-      return this.firstVisible(group, timeoutMs);
+      return this.firstVisible(group, Math.min(timeoutMs, 1500));
     }
     return null;
   }
