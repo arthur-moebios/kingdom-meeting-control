@@ -11,9 +11,11 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        // Operator dashboard + the read-only tribune tablet view (/tablet.html).
+        // Operator dashboard, the read-only tribune tablet view (/tablet.html),
+        // and the mobile timer remote (/remote.html).
         main: resolve(import.meta.dirname, "index.html"),
         tablet: resolve(import.meta.dirname, "tablet.html"),
+        remote: resolve(import.meta.dirname, "remote.html"),
       },
     },
   },

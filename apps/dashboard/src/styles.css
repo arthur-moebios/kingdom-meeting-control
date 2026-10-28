@@ -124,6 +124,11 @@ input, textarea, select {
 .pollres-bar { height: 8px; background: var(--input); border-radius: 5px; overflow: hidden; }
 .pollres-barfill { display: block; height: 100%; background: var(--accent); border-radius: 5px; transition: width .4s ease; }
 .pollres-opt-val { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pollres-attend { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--cardAlt); border: 2px solid var(--accent); border-radius: 14px; padding: 10px 16px; margin: 10px 0 12px; }
+.pollres-attend-label { font-size: 12px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: .04em; line-height: 1.1; }
+.pollres-attend-num { font-size: 52px; font-weight: 800; color: var(--accent); line-height: 1; font-variant-numeric: tabular-nums; }
+.pollres-attend-sm { font-size: 13px; margin: 5px 0; }
+.pollres-attend-sm b { font-size: 18px; color: var(--accent); }
 .poll-hist { margin-top: 10px; }
 .poll-hist > summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--muted); padding: 6px 0; }
 .poll-day { margin: 8px 0; padding-top: 6px; border-top: 1px dashed var(--border); }
@@ -211,6 +216,36 @@ input, textarea, select {
   .m-row { grid-template-columns: 1fr auto auto; }
   .m-alloc { display: none; }
 }
+
+/* =========================================================
+   Mobile timer remote (/remote.html)
+   ========================================================= */
+.rc { max-width: 560px; margin: 0 auto; padding: 12px 14px 36px; }
+.rc-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 10px; }
+.rc-title-top { font-size: 18px; font-weight: 800; }
+.rc-dot { width: 12px; height: 12px; border-radius: 50%; background: #9ca3af; flex: 0 0 auto; }
+.rc-dot.on { background: #22c55e; }
+.rc-week { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.rc-wait, .rc-empty { color: var(--muted); padding: 24px 0; text-align: center; font-size: 15px; }
+.rc-err { background: #450a0a; border: 1px solid #b91c1c; color: #fecaca; padding: 8px 10px; border-radius: 8px; font-size: 13px; margin-bottom: 10px; }
+.rc-active { margin-bottom: 14px; }
+.rc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rc-row { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+.rc-row.active { border-color: var(--accent); }
+.rc-rowmain { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: none; border: none; color: var(--fg); padding: 0; text-align: left; min-width: 0; }
+.rc-sec { font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; font-weight: 800; }
+.rc-rowtitle { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 42vw; }
+.rc-rem { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 54px; text-align: right; }
+.rc-rem.over { color: #f87171; }
+.rc-btn { width: 46px; height: 46px; padding: 0; font-size: 17px; border-radius: 12px; border: none; color: #fff; cursor: pointer; }
+.rc-btn.play { background: var(--accent); }
+.rc-btn.pause { background: #ef4444; }
+.rc-btn.reset { background: var(--cardAlt); color: var(--fg); border: 1px solid var(--border); font-size: 15px; }
+.rc-btn:disabled { opacity: .5; }
+
+/* QR card (operator panel) */
+.qr { display: block; width: 200px; height: 200px; background: #fff; padding: 8px; border-radius: 12px; margin: 4px auto 8px; }
+.qr-url { display: block; font-size: 12px; word-break: break-all; color: var(--muted); text-align: center; }
 
 /* =========================================================
    Settings modal — kept from before

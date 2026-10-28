@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 import type { CapabilityStatus, PollResult } from "@kmc/shared-types";
 import { api } from "./api.js";
 import { useLiveState } from "./useLiveState.js";
@@ -339,6 +340,10 @@ function EnquetesCard({ busy, run, lastEvent }: { busy: string | null; run: RunN
 }
 
 function PollResultView({ p, compact }: { p: PollResult; compact?: boolean }) {
+  // Attendance-style poll: every option label is a number (how many people at
+  // that location), so total attendance = Σ(label × votes).
+  const numeric = p.options.length > 0 && p.options.every((o) => /^\d+$/.test(o.label.trim()));
+  const attendance = numeric ? p.options.reduce((s, o) => s + Number(o.label) * o.votes, 0) : null;
   return (
     <div className="pollres">
       <div className="pollres-head">
@@ -346,12 +351,23 @@ function PollResultView({ p, compact }: { p: PollResult; compact?: boolean }) {
         <span className="muted small">{p.totalVoted}/{p.totalParticipants} votaram</span>
       </div>
       {!compact && p.question && <div className="pollres-q muted small">{p.question}</div>}
+      {attendance !== null &&
+        (compact ? (
+          <div className="pollres-attend-sm">Assistência total: <b>{attendance}</b></div>
+        ) : (
+          <div className="pollres-attend">
+            <span className="pollres-attend-label">Assistência<br />total</span>
+            <span className="pollres-attend-num">{attendance}</span>
+          </div>
+        ))}
       <ul className="pollres-opts">
         {p.options.map((o, i) => (
           <li key={i} className="pollres-opt">
             <span className="pollres-opt-label" title={o.label}>{o.label}</span>
             <span className="pollres-bar"><span className="pollres-barfill" style={{ width: `${o.percent}%` }} /></span>
-            <span className="pollres-opt-val">{o.votes} ({o.percent}%)</span>
+            <span className="pollres-opt-val">
+              {numeric ? `${o.votes}×${o.label}=${o.votes * Number(o.label)}` : `${o.votes} (${o.percent}%)`}
+            </span>
           </li>
         ))}
       </ul>
@@ -372,11 +388,16 @@ function AdvancedSection({
 }) {
   const [logs, setLogs] = useState<{ time: string; levelLabel: string; msg: string }[]>([]);
   const [net, setNet] = useState<{ addresses: string[]; port: number; tabletUrls: string[] } | null>(null);
+  const [pres, setPres] = useState<{ brightness: number | null; brightnessDisplayId: string | null; presentationActive: boolean } | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
-    const id = setInterval(() => { api.logs().then((r) => setLogs(r.logs)).catch(() => void 0); }, 4000);
-    api.logs().then((r) => setLogs(r.logs)).catch(() => void 0);
+    const tick = () => {
+      api.logs().then((r) => setLogs(r.logs)).catch(() => void 0);
+      api.presentationStatus().then(setPres).catch(() => void 0);
+    };
+    const id = setInterval(tick, 2500);
+    tick();
     api.net().then(setNet).catch(() => void 0);
     return () => clearInterval(id);
   }, [open]);
@@ -401,13 +422,16 @@ function AdvancedSection({
           ) : <p className="muted">Descobrindo endereços da rede…</p>}
         </Card>
 
+        <RemoteQrCard net={net} />
+
         <Card icon="📺" title="Compartilhamento">
           <table className="kv">
             <tbody>
               <tr><td>Modo</td><td>{s.settings.share.mode}</td></tr>
               <tr><td>Monitor projetor</td><td>{s.settings.share.projectorDisplayId ?? "não definido"}</td></tr>
-              <tr><td>Apresentação ativa</td><td><Dot on={s.presentation.presentationActive} /> {s.presentation.presentationActive ? "sim" : "não"}</td></tr>
+              <tr><td>Apresentação ativa</td><td><Dot on={(pres ?? s.presentation).presentationActive} /> {(pres ?? s.presentation).presentationActive ? "sim" : "não"}</td></tr>
               <tr><td>JW Library detectado</td><td><Dot on={s.presentation.jwLibraryDetected} /> {s.presentation.jwLibraryDetected ? "sim" : "não"}</td></tr>
+              <tr><td>Brilho projetor</td><td><b>{pres?.brightness ?? "—"}</b> {pres?.brightnessDisplayId ? `(${pres.brightnessDisplayId.replace(/\\\\\.\\/, "")})` : ""} <span className="muted">· liga ≥25, desliga ≤12</span></td></tr>
             </tbody>
           </table>
           <div className="actions">
@@ -455,6 +479,37 @@ function AdvancedSection({
         </Card>
       </div>
     </details>
+  );
+}
+
+/* ----------------------------------------------------- Controle remoto (QR) */
+// Prefer a real LAN IP (phone on the same Wi-Fi) over Tailscale/CGNAT (100.64/10).
+function bestLanAddr(addrs: string[]): string | undefined {
+  const score = (ip: string) =>
+    ip.startsWith("192.168.") ? 0 : ip.startsWith("10.") ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : ip.startsWith("100.") ? 9 : 5;
+  return [...addrs].sort((a, b) => score(a) - score(b))[0];
+}
+function RemoteQrCard({ net }: { net: { addresses: string[]; port: number } | null }) {
+  const addr = net ? bestLanAddr(net.addresses) : undefined;
+  const url = addr ? `http://${addr}:${net!.port}/remote.html` : "";
+  const [dataUrl, setDataUrl] = useState("");
+  useEffect(() => {
+    if (!url) return;
+    QRCode.toDataURL(url, { width: 400, margin: 1 }).then(setDataUrl).catch(() => void 0);
+  }, [url]);
+  return (
+    <Card icon="📱" title="Controle remoto (celular)">
+      {dataUrl ? (
+        <img className="qr" src={dataUrl} alt="QR do controle do cronômetro" />
+      ) : (
+        <p className="muted small">Descobrindo endereço da rede…</p>
+      )}
+      <p className="muted small">
+        Escaneie com o celular para abrir o <b>controle do cronômetro</b> (iniciar / pausar / próxima).
+        Qualquer pessoa na mesma rede Wi-Fi pode usar.
+      </p>
+      {url && <code className="qr-url">{url}</code>}
+    </Card>
   );
 }
 

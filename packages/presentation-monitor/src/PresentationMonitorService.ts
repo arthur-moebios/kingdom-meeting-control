@@ -25,10 +25,16 @@ export interface PresentationLogger {
 export class PresentationMonitorService {
   private displays: Display[] = [];
   private projectorBounds: { x: number; y: number; width: number; height: number } | null = null;
+  // Regions to sample: the configured projector display if set, otherwise ALL
+  // non-primary displays (the brightest wins), so JW on any secondary monitor is
+  // detected even when the display layout changes.
+  private sampleTargets: { id: string; bounds: { x: number; y: number; width: number; height: number } }[] = [];
   private status: PresentationStatus = {
     jwLibraryDetected: false,
     presentationActive: false,
     matchedWindowTitle: null,
+    brightness: null,
+    brightnessDisplayId: null,
     updatedAt: new Date().toISOString(),
   };
   private timer: NodeJS.Timeout | null = null;
@@ -101,12 +107,14 @@ $out | ConvertTo-Json -Compress`;
       this.log.warn({ err: String(err) }, "Display enumeration failed");
     }
 
-    // Projector = the configured display, else the first non-primary, else null.
-    const projector =
-      this.displays.find((d) => projectorDisplayId != null && d.id === projectorDisplayId) ??
-      this.displays.find((d) => !d.primary) ??
-      null;
-    this.projectorBounds = projector ? projector.bounds : null;
+    // Sample targets: the configured display if set, else ALL non-primary
+    // displays (brightest wins at probe time). Robust to display-layout changes.
+    const configured =
+      projectorDisplayId != null ? this.displays.find((d) => d.id === projectorDisplayId) : undefined;
+    this.sampleTargets = (configured ? [configured] : this.displays.filter((d) => !d.primary))
+      .filter((d) => d.bounds.width >= 2 && d.bounds.height >= 2)
+      .map((d) => ({ id: d.id, bounds: d.bounds }));
+    this.projectorBounds = this.sampleTargets[0]?.bounds ?? null;
     return this.displays;
   }
 
@@ -162,34 +170,42 @@ $g.Dispose();$tg.Dispose();$bmp.Dispose();$t.Dispose()
    * in ONE PowerShell call (one spawn, small bitmap), so the poll can run often
    * with low overhead and low latency.
    */
-  private async probe(): Promise<{ jw: boolean; brightness: number | null }> {
-    if (!this.isWindows) return { jw: false, brightness: null };
-    const b = this.projectorBounds;
-    // Capture the WHOLE projector and downscale to 64x40, then average — so the
-    // idle centre logo doesn't keep it "active". Fast enough at a ~1.2s poll.
-    const sampling = b
-      ? `$bmp=New-Object System.Drawing.Bitmap ${b.width},${b.height};$g=[System.Drawing.Graphics]::FromImage($bmp);$g.CopyFromScreen(${b.x},${b.y},0,0,(New-Object System.Drawing.Size(${b.width},${b.height})));$t=New-Object System.Drawing.Bitmap 64,40;$tg=[System.Drawing.Graphics]::FromImage($t);$tg.DrawImage($bmp,0,0,64,40);$s=0;$n=0;for($i=0;$i -lt 64;$i++){for($j=0;$j -lt 40;$j++){$p=$t.GetPixel($i,$j);$s+=($p.R+$p.G+$p.B);$n++}};$g.Dispose();$tg.Dispose();$bmp.Dispose();$t.Dispose();$br=[int]($s/(3*$n))`
-      : `$br=-1`;
+  private async probe(): Promise<{ jw: boolean; brightness: number | null; displayId: string | null }> {
+    if (!this.isWindows) return { jw: false, brightness: null, displayId: null };
+    const targets = this.sampleTargets;
+    // For each target: capture the WHOLE display, downscale to 64x40, average —
+    // so the idle centre logo doesn't keep it "active". Output the MAX across
+    // targets plus which one, so JW on any secondary monitor is detected.
+    const avgLines = targets
+      .map(
+        (t, k) =>
+          `$v=Avg ${t.bounds.x} ${t.bounds.y} ${t.bounds.width} ${t.bounds.height};if($v -gt $best){$best=$v;$bi=${k}}`,
+      )
+      .join("\n");
     const script = `Add-Type -AssemblyName System.Drawing
 $jw=0
 if(Get-Process|Where-Object{ $_.MainWindowTitle -match 'JW Library' -or $_.ProcessName -match 'JWLibrary' }){$jw=1}
-${sampling}
-"$jw $br"`;
+function Avg($x,$y,$w,$h){$bmp=New-Object System.Drawing.Bitmap $w,$h;$g=[System.Drawing.Graphics]::FromImage($bmp);$g.CopyFromScreen($x,$y,0,0,(New-Object System.Drawing.Size($w,$h)));$t=New-Object System.Drawing.Bitmap 64,40;$tg=[System.Drawing.Graphics]::FromImage($t);$tg.DrawImage($bmp,0,0,64,40);$s=0;$n=0;for($i=0;$i -lt 64;$i++){for($j=0;$j -lt 40;$j++){$p=$t.GetPixel($i,$j);$s+=($p.R+$p.G+$p.B);$n++}};$g.Dispose();$tg.Dispose();$bmp.Dispose();$t.Dispose();return [int]($s/(3*$n))}
+$best=-1;$bi=-1
+${avgLines}
+"$jw $best $bi"`;
     try {
       const raw = (await this.runPowerShell(script)).trim();
       const parts = raw.split(/\s+/);
       const jw = parts[0] === "1";
       const n = parts[1] != null ? parseInt(parts[1], 10) : NaN;
-      return { jw, brightness: Number.isFinite(n) && n >= 0 ? n : null };
+      const bi = parts[2] != null ? parseInt(parts[2], 10) : -1;
+      const displayId = bi >= 0 && targets[bi] ? targets[bi]!.id : null;
+      return { jw, brightness: Number.isFinite(n) && n >= 0 ? n : null, displayId };
     } catch (err) {
       this.log.debug({ err: String(err) }, "probe failed");
-      return { jw: false, brightness: null };
+      return { jw: false, brightness: null, displayId: null };
     }
   }
 
   /** One observation cycle: JW running + projector brightness → presentationActive. */
   private async refresh(): Promise<void> {
-    const { jw, brightness } = await this.probe();
+    const { jw, brightness, displayId } = await this.probe();
 
     // Hysteresis: turn ON above ON_THRESHOLD, OFF below OFF_THRESHOLD, else hold.
     let active = this.status.presentationActive;
@@ -204,17 +220,18 @@ ${sampling}
       jwLibraryDetected: jw,
       presentationActive,
       matchedWindowTitle: jw ? "JW Library" : null,
+      brightness,
+      brightnessDisplayId: displayId,
       updatedAt: new Date().toISOString(),
     };
     const changed =
       next.presentationActive !== this.status.presentationActive ||
       next.jwLibraryDetected !== this.status.jwLibraryDetected;
     this.status = next;
+    // Only fire onChange (auto-share trigger + event) on a real state change;
+    // the live brightness is read via getStatus()/the status endpoint.
     if (changed) {
-      this.log.info(
-        { presentationActive, brightness, jw },
-        "Presentation state changed",
-      );
+      this.log.info({ presentationActive, brightness, displayId, jw }, "Presentation state changed");
       if (this.onChange) this.onChange(next);
     }
   }
