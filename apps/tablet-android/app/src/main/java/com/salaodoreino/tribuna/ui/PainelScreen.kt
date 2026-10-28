@@ -294,14 +294,16 @@ private fun StatusChip(state: UiState) {
 private data class StatusViz(val dot: Color, val title: String, val sub: String, val tint: Color, val bg: Color, val bd: Color)
 
 private fun statusVisuals(state: UiState): StatusViz = when (state.conn) {
-    Conn.NO_TOKEN -> StatusViz(C.amber, "Configurar token", "Toque na engrenagem", C.amber, Color(0xFF2A1E05), Color(0xFF5C451E))
-    Conn.SEARCHING -> StatusViz(C.muted, "Procurando o Salão…", "Rede local", C.fg, C.card, C.border)
-    Conn.OFFLINE -> StatusViz(C.red, "Sem conexão", state.host ?: "—", C.red, Color(0xFF2A0E0E), Color(0xFF5C1E1E))
+    // Neutral gray background (same as the A-/A+ buttons) for readability; the
+    // state stays color-coded via the dot + the title tint + the border.
+    Conn.NO_TOKEN -> StatusViz(C.amber, "Configurar token", "Toque na engrenagem", C.amber, C.cardAlt, Color(0xFF5C451E))
+    Conn.SEARCHING -> StatusViz(C.muted, "Procurando o Salão…", "Rede local", C.fg, C.cardAlt, C.border)
+    Conn.OFFLINE -> StatusViz(C.red, "Sem conexão", state.host ?: "—", C.red, C.cardAlt, Color(0xFF5C1E1E))
     Conn.CONNECTED ->
         if (state.meetingLive)
-            StatusViz(C.green, "Reunião conectada", "Zoom • ${state.participantCount} participantes", C.lime, Color(0xFF0E2A1A), Color(0xFF1E5C3A))
+            StatusViz(C.green, "Reunião conectada", "Zoom • ${state.participantCount} participantes", C.lime, C.cardAlt, Color(0xFF1E5C3A))
         else
-            StatusViz(C.blue, "Conectado ao Salão", "Aguardando reunião", C.fg, C.card, C.border)
+            StatusViz(C.blue, "Conectado ao Salão", "Aguardando reunião", C.fg, C.cardAlt, C.border)
 }
 
 @Composable
