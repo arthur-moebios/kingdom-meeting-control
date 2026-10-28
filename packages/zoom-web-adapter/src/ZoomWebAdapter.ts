@@ -315,9 +315,12 @@ export class ZoomWebAdapter {
    */
   private async openMoreMenu(): Promise<boolean> {
     await this.revealControls();
-    const more = await this.firstVisible(selectors.moreButton, 2000);
-    if (!more) return false;
-    await more.click({ force: true }).catch(() => void 0);
+    // JS click (viewport-independent): on the short window the footer sits below
+    // the fold, so a Playwright COORDINATE click on "More" lands off-screen and
+    // the menu never opens (that was "Share button not found" even though Share
+    // is in the menu). Opening a menu needs no trusted gesture; the subsequent
+    // trusted click lands on the revealed item, which pops up in-viewport.
+    if (!(await this.jsClickOne(selectors.moreButton.candidates))) return false;
     await this.page.waitForTimeout(450);
     return true;
   }
