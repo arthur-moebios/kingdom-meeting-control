@@ -55,6 +55,19 @@ public static class JwMediaObserver
                     foreach (AutomationElement window in windows)
                     {
                         var c = window.Current;
+                        // Unified workspace: the JW operator frame is a child of
+                        // our host. Include it while leaving the projection root alone.
+                        if (c.Name.StartsWith("Salão do Reino — JW Library e Painel do Operador"))
+                        {
+                            var embedded = window.FindFirst(TreeScope.Descendants, new AndCondition(
+                                new PropertyCondition(AutomationElement.NameProperty, "JW Library"),
+                                new PropertyCondition(AutomationElement.ClassNameProperty, "ApplicationFrameWindow")));
+                            if (embedded != null && embedded.Current.NativeWindowHandle != 0)
+                            {
+                                current[embedded.Current.NativeWindowHandle] = embedded;
+                                running = true;
+                            }
+                        }
                         // UWP may expose ApplicationFrameHost's PID, not JWLibrary's.
                         if (!pids.Contains(c.ProcessId) && c.Name != "JW Library") continue;
                         running = true;

@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "zoomVersion": "7.1.9.48550",
+  "bridgeSha256": "417c53cd26dfd8c24d6b9225db18bdc4fc03ec198aa2dac8f61c80322bc5f2b2",
+  "meetingVtableRvas": [1637576, 1645664],
+  "helpers": {
+    "audio": {
+      "meetingOffset": 9688,
+      "adjust": 0,
+      "vtableRva": 1663912,
+      "getterSlot": 10,
+      "getterRva": 112128
+    },
+    "participantAction": {
+      "meetingOffset": 9544,
+      "adjust": 16,
+      "vtableRva": 1693000,
+      "getterSlot": 9,
+      "getterRva": 111088
+    },
+    "participantInfo": {
+      "meetingOffset": 9544,
+      "adjust": 8,
+      "vtableRva": 1693160,
+      "getterSlot": 9,
+      "getterRva": 111088
+    },
+    "waiting": {
+      "meetingOffset": 10120,
+      "adjust": 0,
+      "vtableRva": 1696040,
+      "getterSlot": 13,
+      "getterRva": 112832
+    },
+    "security": {
+      "meetingOffset": 10840,
+      "adjust": 16,
+      "vtableRva": 1670552,
+      "getterSlot": 64,
+      "getterRva": 113376
+    },
+    "meetingAction": {
+      "meetingOffset": 10840,
+      "adjust": 8,
+      "vtableRva": 1669816,
+      "getterSlot": 64,
+      "getterRva": 113376
+    }
+  },
+  "commands": {
+    "join-audio": {
+      "helper": "audio", "slot": 1, "rva": 359744, "args": [], "role": "self",
+      "returnType": "void", "mutates": true, "validation": "static-only",
+      "evidence": "ev_a83b2f595f97912add7c3d8c05839d3046f539ec0039f623cf97c08a9c1f591d",
+      "meaning": "Conectar o áudio do computador pelo JoinOrLeaveAudioInternal(1)."
+    },
+    "leave-audio": {
+      "helper": "audio", "slot": 2, "rva": 359760, "args": [], "role": "self",
+      "returnType": "void", "mutates": true, "validation": "static-only",
+      "evidence": "ev_a83b2f595f97912add7c3d8c05839d3046f539ec0039f623cf97c08a9c1f591d",
+      "meaning": "Desconectar o áudio do computador pelo JoinOrLeaveAudioInternal(0)."
+    },
+    "mute-self": {
+      "helper": "audio",
+      "slot": 3,
+      "rva": 359776,
+      "args": [],
+      "role": "self",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_4cacaf46dca27eb57e4c9c30dd1d21deeb396c95ecc39888cc07ec7f4fead1f1",
+      "meaning": "Silenciar o próprio microfone."
+    },
+    "unmute-self": {
+      "helper": "audio",
+      "slot": 4,
+      "rva": 359888,
+      "args": [],
+      "role": "self",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_cac81dee4c9389afe33d1858bed8150ac5e452e21bed11caaf63a8d1312684d2",
+      "meaning": "Solicitar abertura do próprio microfone, sujeita às regras da sala."
+    },
+    "mute-participant": {
+      "helper": "audio",
+      "slot": 5,
+      "rva": 359984,
+      "args": [
+        "participantId"
+      ],
+      "role": "host-or-cohost",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_5762a8826dbfad1e5359eeb466af8008f8220a781340a52143b37055d10b2ee2",
+      "meaning": "Silenciar um participante pelo identificador interno atual."
+    },
+    "ask-unmute-participant": {
+      "helper": "audio",
+      "slot": 6,
+      "rva": 360032,
+      "args": [
+        "participantId"
+      ],
+      "role": "host-or-cohost",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_5e0bc17f0fb099ae749b02a05d9a2afb37d4816977d43c4adf15138422aa02ad",
+      "meaning": "Caminho nativo de unmute; consentimento e regras continuam a cargo do Zoom."
+    },
+    "ask-unmute-all": {
+      "helper": "audio",
+      "slot": 20,
+      "rva": 366304,
+      "args": [],
+      "role": "host-or-cohost",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_de462531e53993e5426b34f6d4174c63bf8683826c6da8da423648c45edfc27a",
+      "meaning": "Caminho nativo de unmute para todos; não comprova abertura efetiva."
+    },
+    "mute-all": {
+      "helper": "audio",
+      "slot": 21,
+      "rva": 366352,
+      "args": [
+        "allowUnmute"
+      ],
+      "role": "host-or-cohost",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_f62f92f23780dd4599d14cb9f1690612f593029c84a35f919d2e2c6e05caae1d",
+      "meaning": "Silenciar todos com escolha explícita sobre permitir reabrir o próprio microfone."
+    },
+    "admit-all": {
+      "helper": "waiting",
+      "slot": 5,
+      "rva": 735696,
+      "args": [],
+      "role": "host-or-cohost",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_d2e5a9498dd401dac492d48840c47f3ff720d57589103fdc3075b2ca15d722eb",
+      "meaning": "Admitir todos da sala de espera."
+    },
+    "admit-participant": {
+      "helper": "waiting",
+      "slot": 6,
+      "rva": 737216,
+      "args": [
+        "participantId"
+      ],
+      "role": "host-or-cohost",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_eaf9f286a594df5483ed75986c64c0e65d6928ecdc11d109747ec21f6a29f78e",
+      "meaning": "Admitir uma pessoa da espera pelo identificador atual."
+    },
+    "set-allow-unmute": {
+      "helper": "security",
+      "slot": 7,
+      "rva": 443952,
+      "args": [
+        "allowUnmute"
+      ],
+      "role": "host",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_d30cc64ed27683b59f6eba838045231a711a1db4db44ee5a500bc271c6482615",
+      "meaning": "Habilitar ou desabilitar reabertura do próprio microfone."
+    },
+    "lower-hand": {
+      "helper": "participantAction",
+      "slot": 14,
+      "rva": 689424,
+      "args": [
+        "participantId"
+      ],
+      "role": "host-or-cohost",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_0d0bd95a2ad0b7ce5886dfc6611e1c56879e849716d0cfc7b4f9dc6b7a8a6ae5",
+      "meaning": "Baixar a mão de um participante."
+    },
+    "lower-all-hands": {
+      "helper": "participantAction",
+      "slot": 13,
+      "rva": 687536,
+      "args": [
+        0
+      ],
+      "role": "host-or-cohost",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_8037d73fbbd92832db73acb0351d6aec2d774511e3d774006b6cc0eb32cb7089",
+      "meaning": "Baixar todas as mãos pelo caminho de reunião normal."
+    },
+    "reclaim-host": {
+      "helper": "participantAction",
+      "slot": 15,
+      "rva": 692016,
+      "args": [],
+      "role": "can-reclaim-host",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_1e5f5352fe619387f814c49a937e83bbcc11aa758598492d4a782b46af156832",
+      "meaning": "Recuperar anfitrião pelo fluxo da conta, sem chave de anfitrião."
+    },
+    "lock-meeting": {
+      "helper": "meetingAction",
+      "slot": 5,
+      "rva": 423568,
+      "args": [],
+      "role": "host",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_1965e545e7e8218dfee016ee784bf15de8c42966f90e78f32361e468af897e59",
+      "meaning": "Bloquear novos ingressos."
+    },
+    "unlock-meeting": {
+      "helper": "meetingAction",
+      "slot": 6,
+      "rva": 423584,
+      "args": [],
+      "role": "host",
+      "returnType": "void",
+      "mutates": true,
+      "validation": "static-only",
+      "evidence": "ev_23e490b7acd73dd71e50f1b6fb50af1c2bcede748843dab9ac0f85492d9cb013",
+      "meaning": "Desbloquear novos ingressos."
+    },
+    "can-reclaim-host": {
+      "helper": "participantInfo",
+      "slot": 28,
+      "rva": 668704,
+      "args": [],
+      "role": "self",
+      "returnType": "int",
+      "mutates": false,
+      "validation": "static-only",
+      "evidence": "ev_e22d177f6fcb3aa5cbf0ab78465a722f096d17e747ee5cb7d1b21c9f7fcb0a34",
+      "meaning": "Consultar elegibilidade para recuperar anfitrião."
+    },
+    "allow-unmute-status": {
+      "helper": "security",
+      "slot": 8,
+      "rva": 445312,
+      "args": [],
+      "role": "self",
+      "returnType": "bool",
+      "mutates": false,
+      "validation": "static-only",
+      "evidence": "ev_97027c2d4b2dd9e9245475b9792a5d67b31ec0c59ee16692d0cb29a5bfb4355e",
+      "meaning": "Consultar permissão atual de reabrir o próprio microfone."
+    },
+    "microphone-status": {
+      "helper": "audio",
+      "slot": 22,
+      "rva": 366400,
+      "args": [],
+      "role": "self",
+      "returnType": "int",
+      "mutates": false,
+      "validation": "static-only",
+      "evidence": "ev_6a6228e8bc5e177a5a53058ce10493900f90f81b7b0c700ccc72f16e4fd5cf5d",
+      "meaning": "Consultar estado bruto do microfone; enum não normalizado."
+    }
+  }
+}

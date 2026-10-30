@@ -7,13 +7,17 @@ on:
       - "apps/server/**"
       - "apps/dashboard/**"
       - "packages/**"
-      - "scripts/build-server.mjs"
-      - "scripts/win/**"
+      - "scripts/**"
+      - "package*.json"
       - ".github/workflows/windows.yml"
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -24,66 +28,38 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-
-      - name: Install deps
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - name: Install dependencies
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
-        run: npm ci
-
+        run: |
+          npm ci
+          python -m pip install frida==17.24.3 pypdf==6.10.0
+      - run: npm run typecheck
+      - run: npm test
       - run: npm run build:dashboard
       - run: npm run build:server
-
-      - name: Download Chromium into the package
+      - name: Assemble native Windows package
         shell: pwsh
         run: |
-          $env:PLAYWRIGHT_BROWSERS_PATH = "$PWD\pkg\ms-playwright"
-          npx playwright install chromium
-
-      - name: Assemble package
+          ./scripts/package-windows.ps1 -OutputDirectory "$PWD/pkg" -PythonPath (Get-Command python).Source
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+          if (Test-Path pkg/server.mjs) { throw 'Legacy web package must not be shipped.' }
+          if (Test-Path pkg/data-native) { throw 'Runtime data must not be shipped.' }
+      - name: Zip native package
+        shell: pwsh
+        run: Compress-Archive -Path pkg/* -DestinationPath KingdomMeetingControl-win.zip
+      - name: Build installer
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force pkg | Out-Null
-          Copy-Item dist\server.mjs pkg\
-          Copy-Item -Recurse apps\dashboard\dist pkg\public
-          New-Item -ItemType Directory -Force pkg\node_modules | Out-Null
-          Copy-Item -Recurse node_modules\playwright pkg\node_modules\playwright
-          Copy-Item -Recurse node_modules\playwright-core pkg\node_modules\playwright-core
-          Copy-Item (Get-Command node).Source pkg\node.exe
-          Copy-Item scripts\win\install-autostart.ps1 pkg\
-          Copy-Item scripts\win\share-picker.ps1 pkg\
-          Copy-Item scripts\win\watch-jw-media.ps1 pkg\
-          Copy-Item scripts\win\JwMediaObserver.cs pkg\
-          Copy-Item scripts\win\JwMediaWindows.cs pkg\
-          Copy-Item scripts\win\LEIA-ME.txt pkg\
-
-          # WebView2 SDK (native window host). Download the NuGet package and
-          # bundle its managed DLLs + the x64 native loader next to the exe.
-          $wv2Ver = "1.0.2792.45"
-          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$wv2Ver" -OutFile wv2.zip
-          Expand-Archive wv2.zip -DestinationPath wv2 -Force
-          Copy-Item wv2\lib\net462\Microsoft.Web.WebView2.Core.dll pkg\
-          Copy-Item wv2\lib\net462\Microsoft.Web.WebView2.WinForms.dll pkg\
-          Copy-Item wv2\runtimes\win-x64\native\WebView2Loader.dll pkg\
-
-          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          & $csc /nologo /target:winexe /platform:x64 `
-            /r:System.dll /r:System.Management.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll `
-            /r:pkg\Microsoft.Web.WebView2.Core.dll /r:pkg\Microsoft.Web.WebView2.WinForms.dll `
-            /out:pkg\KingdomMeetingControl.exe scripts\win\Launcher.cs
-          Write-Host "Package contents:"; Get-ChildItem pkg
-
-      - name: Zip
-        shell: pwsh
-        run: Compress-Archive -Path pkg\* -DestinationPath KingdomMeetingControl-win.zip -Force
-
-      - name: Build installer (Inno Setup)
-        shell: pwsh
-        run: |
-          choco install innosetup --no-progress -y
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          & $iscc "/DSrcDir=$PWD\pkg" "/DOutDir=$PWD" "/DAppVersion=0.1.0" scripts\win\installer.iss
-          Get-ChildItem KingdomMeetingControl-setup.exe | Select-Object Name, Length
-
+          $iscc = 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+          & $iscc "/DSrcDir=$PWD/pkg" "/DOutDir=$PWD" "/DAppVersion=$env:APP_VERSION" scripts/win/installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-app
@@ -91,14 +67,29 @@ jobs:
             KingdomMeetingControl-win.zip
             KingdomMeetingControl-setup.exe
           if-no-files-found: error
-
-      - name: Publish Release (public download)
-        if: github.ref == 'refs/heads/main'
+      - name: Update rolling release tag
+        shell: pwsh
+        run: |
+          git tag --force pc-latest $env:GITHUB_SHA
+          git push origin refs/tags/pc-latest --force
+          if ($LASTEXITCODE -ne 0) { throw 'Release tag update failed.' }
+      - name: Replace Windows release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: pc-latest
-          name: Windows app (latest)
-          body: "PC do Salão: INSTALADOR KingdomMeetingControl-setup.exe (recomendado — instala por usuário, cria atalhos) ou o pacote portátil .zip (extrair e rodar KingdomMeetingControl.exe). Inclui backend + painel + Chromium."
+          target_commitish: ${{ github.sha }}
+          name: Windows ${{ env.APP_VERSION }} — Zoom nativo
+          make_latest: true
+          body: |
+            Versão ${{ env.APP_VERSION }}. Substitui o pacote antigo baseado no Chromium.
+
+            Inclui painel Windows com Zoom desktop, JW Library, câmera, cronômetros
+            PWA, Sala B, importação de nomes/programações e conector Cloudflare.
+            Python e dependências acompanham o pacote.
+
+            Instale KingdomMeetingControl-setup.exe ou extraia o ZIP portátil.
+            Zoom desktop e JW Library devem estar instalados no computador.
+            Nenhum banco de dados ou credencial pessoal é incluído.
           files: |
             KingdomMeetingControl-win.zip
             KingdomMeetingControl-setup.exe

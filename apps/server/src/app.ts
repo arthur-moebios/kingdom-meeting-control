@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import type { AppContext } from "./context.js";
 import { registerRoutes } from "./routes.js";
 import { registerWebSocket } from "./ws.js";
+import { registerTimerRemote } from './mobileTimers.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   // Fastify uses its own logging off; we rely on the shared pino logger.
@@ -26,6 +27,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(async (instance) => {
     registerWebSocket(instance, ctx);
     registerRoutes(instance, ctx);
+    registerTimerRemote(instance,ctx);
   });
 
   // Production: serve the built operator dashboard + tablet view from one

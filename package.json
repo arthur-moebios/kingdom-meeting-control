@@ -1,8 +1,8 @@
 {
   "name": "kingdom-meeting-control",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Automated Zoom Web controller for a Kingdom Hall A/V operator (Windows). Phase 1: foundation, persistent Chromium prototype, admin dashboard.",
+  "description": "Windows operator panel with native Zoom, JW Library media sharing and mobile timers.",
   "type": "module",
   "engines": {
     "node": ">=22.5.0"

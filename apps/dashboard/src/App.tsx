@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
-import type { CapabilityStatus, PollResult } from "@kmc/shared-types";
+import type { CapabilityStatus, PollResult, RemoteIntegrationStatus } from "@kmc/shared-types";
 import { api } from "./api.js";
 import { useLiveState } from "./useLiveState.js";
 import { SettingsPanel } from "./SettingsPanel.js";
 import { MeetingPanel } from "./MeetingPanel.js";
+import { NativeDashboard } from "./NativeDashboard.js";
+import { PanelDivider, remember, storedNumber } from "./PanelDivider.js";
+import { HostCameraSlot } from './HostCameraSlot.js';
 
 const STATE_LABEL: Record<string, string> = {
   STOPPED: "Parado",
@@ -67,10 +70,19 @@ function Card({
 }
 
 export function App() {
+  return new URLSearchParams(window.location.search).get("native") === "1" ? <NativeDashboard /> : <WebApp />;
+}
+
+function WebApp() {
   const { connected, snapshot, lastEvent, reconnect } = useLiveState();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [compactMode, setCompactMode] = useState(() => storedNumber('kmc.operator.compact',1,0,1) === 1);
+  const [timerWidth, setTimerWidth] = useState(() => storedNumber('kmc.operator.timerWidth',50,30,70));
+  const [timerHeight, setTimerHeight] = useState(() => storedNumber('kmc.operator.timerHeight',70,30,70));
+  const [clockSize, setClockSize] = useState(() => storedNumber('kmc.operator.clockSize',48,32,72));
+  const [toolTab, setToolTab] = useState('people');
 
   const run: RunNamed = async (name, fn) => {
     setBusy(name);
@@ -86,9 +98,10 @@ export function App() {
 
   const s = snapshot;
   const status = s?.status;
+  const compact = status?.backend === 'native' && compactMode;
 
   return (
-    <div className="app">
+    <div className={`app ${compact ? 'operator-layout' : ''}`} style={{'--timer-width': `${timerWidth}fr`, '--tools-width': `${100-timerWidth}fr`, '--timer-height': `${timerHeight}fr`, '--attendance-height': `${100-timerHeight}fr`, '--clock-size': `${clockSize}px`} as React.CSSProperties}>
       <header className="appbar">
         <div className="brand">
           <div className="brand-logo">📖</div>
@@ -98,6 +111,11 @@ export function App() {
           </div>
         </div>
         <div className="headright">
+          {status?.backend === 'native' && <details className="layout-options"><summary>Ajustar</summary><div>
+            <label>Cronômetro <input type="range" min="32" max="72" value={clockSize} onChange={e => { const n=Number(e.target.value);setClockSize(n);remember('kmc.operator.clockSize',n); }} /></label>
+            <button className="secondary small" onClick={() => { setCompactMode(!compactMode);remember('kmc.operator.compact',compactMode ? 0 : 1); }}>{compactMode ? 'Visão completa' : 'Visão compacta'}</button>
+            <button className="secondary small" onClick={() => { setTimerWidth(50);setTimerHeight(70);setClockSize(48);remember('kmc.operator.timerWidth',50);remember('kmc.operator.timerHeight',70);remember('kmc.operator.clockSize',48); }}>Restaurar disposição</button>
+          </div></details>}
           <HeaderStatus connected={connected} state={status?.state ?? null} />
           <Clock />
           <button className="iconbtn" title="Configurações" onClick={() => setShowSettings(true)}>⚙</button>
@@ -124,30 +142,41 @@ export function App() {
         <>
           <div className="grid">
             <div className="col-main">
-              <MeetingPanel meeting={s.meeting} warnSeconds={s.settings.meetingSchedule.warnSeconds} />
+              <div className="operator-timer"><MeetingPanel compact={compact} meeting={s.meeting} names={s.meetingNames} warnSeconds={s.settings.meetingSchedule.warnSeconds} /></div>
+              {compact && <PanelDivider horizontal label="Altura do cronômetro e assistência" value={timerHeight} onChange={n => {setTimerHeight(n);remember('kmc.operator.timerHeight',n);}} />}
+              <div className="operator-lower operator-attendance"><EnquetesCard busy={busy} run={run} lastEvent={lastEvent} /></div>
             </div>
+            {compact && <PanelDivider label="Largura do cronômetro" value={timerWidth} onChange={n => {setTimerWidth(n);remember('kmc.operator.timerWidth',n);}} />}
             <div className="col-side">
-              <RemoteQrCard />
-              <AnunciosCard value={s.settings.tablet.announcements} busy={!!busy} run={run} />
-              <PeopleCard s={s} busy={busy} run={run} />
-              <EnquetesCard busy={busy} run={run} lastEvent={lastEvent} />
-              <TransmissaoCard s={s} busy={busy} run={run} />
+              {status?.backend==='native' && <HostCameraSlot />}
+              <div className="operator-quicktools"><TransmissaoCard s={s} busy={busy} run={run} /></div>
+              {compact && <nav className="operator-tabs" aria-label="Ferramentas">
+                {[['people','Participantes'],['announcements','Anúncios'],['remote','Celular'],['advanced','Mais']].map(([id,label]) => <button key={id} className={toolTab===id?'':'secondary'} aria-pressed={toolTab===id} onClick={() => setToolTab(id!)}>{label}</button>)}
+              </nav>}
+              <div className="operator-data">
+                <div className="operator-upper">
+                  <div hidden={compact && toolTab!=='people'}><PeopleCard s={s} busy={busy} run={run} /></div>
+                  <div hidden={compact && toolTab!=='announcements'}><AnunciosCard value={s.settings.tablet.announcements} busy={!!busy} run={run} /></div>
+                  <div hidden={compact && toolTab!=='remote'}><RemoteQrCard /></div>
+                  <div hidden={!compact || toolTab!=='advanced'}><AdvancedSection s={s} busy={busy} run={run} reconnect={reconnect} lastEvent={lastEvent} openSettings={() => setShowSettings(true)} /></div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <AdvancedSection
+          <div hidden={compact}><AdvancedSection
             s={s}
             busy={busy}
             run={run}
             reconnect={reconnect}
             lastEvent={lastEvent}
             openSettings={() => setShowSettings(true)}
-          />
+          /></div>
         </>
       )}
 
       {showSettings && (
-        <SettingsPanel displays={s?.displays ?? []} onClose={() => setShowSettings(false)} onSaved={reconnect} />
+        <SettingsPanel native={s?.status.backend === 'native'} displays={s?.displays ?? []} onClose={() => setShowSettings(false)} onSaved={reconnect} />
       )}
     </div>
   );
@@ -163,14 +192,17 @@ function TransmissaoCard({ s, busy, run }: { s: Snapshot; busy: string | null; r
     await api.setBrowserHidden(next);
     await api.putSettings({ browser: { hidden: next } });
   });
+  const native = status.backend === 'native';
   const stateText = !status
     ? "Conectando…"
     : status.state === "INITIALIZING"
-      ? "Iniciando o navegador…"
+      ? native ? "Conectando ao Zoom desktop…" : "Iniciando o navegador…"
+      : status.state === "JOINING"
+        ? "Entrando na reunião…"
       : status.state === "RECONNECTING"
         ? "Reconectando…"
         : !status.authenticated
-          ? "Faça login no Zoom na janela do Chromium (uma vez)."
+          ? native ? "Faça login no Zoom desktop (uma vez)." : "Faça login no Zoom na janela do Chromium (uma vez)."
           : inMeeting
             ? "✓ Na reunião"
             : "Pronto para entrar.";
@@ -192,7 +224,7 @@ function TransmissaoCard({ s, busy, run }: { s: Snapshot; busy: string | null; r
       <div className="actions">
         <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("sharemon", () => api.shareMonitorStart())}>📺 Compartilhar</button>
         <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("sharestop", () => api.shareMonitorStop())}>Parar</button>
-        <button className="btn secondary small" disabled={!!busy} onClick={toggleBrowser} title="Mostra/esconde a janela do navegador do Zoom">
+        <button className="btn secondary small" disabled={!!busy} onClick={toggleBrowser} title="Mostra/esconde a janela do Zoom">
           {hidden ? "👁 Ver Zoom" : "🙈 Ocultar Zoom"}
         </button>
         <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("poll", () => api.launchPoll())} title="Lança a enquete pré-criada no Zoom">📊 Lançar enquete</button>
@@ -217,7 +249,9 @@ function MiniStat({ label, on, yes, no }: { label: string; on: boolean | null; y
 function AnunciosCard({ value, busy, run }: { value: string; busy: boolean; run: RunNamed }) {
   const [text, setText] = useState(value);
   const [dirty, setDirty] = useState(false);
-  useEffect(() => { if (!dirty) setText(value); }, [value, dirty]);
+  const draft = useRef(value);
+  // Marking a save complete must not reapply an older server snapshot.
+  useEffect(() => { if (!dirty) { draft.current = value; setText(value); } }, [value]);
   return (
     <Card icon="📣" title="Anúncios (tablet)" trailing={dirty ? <span className="muted small">não salvo</span> : undefined}>
       <textarea
@@ -225,10 +259,20 @@ function AnunciosCard({ value, busy, run }: { value: string; busy: boolean; run:
         value={text}
         rows={12}
         placeholder="Escreva os anúncios da reunião…"
-        onChange={(e) => { setText(e.target.value); setDirty(true); }}
+        onChange={(e) => { draft.current = e.target.value; setText(e.target.value); setDirty(true); }}
       />
       <div className="actions">
-        <button className="btn" disabled={busy} onClick={() => { run("ann", () => api.putSettings({ tablet: { announcements: text } })); setDirty(false); }}>
+        <button className="btn" disabled={busy} onClick={() => {
+          const submitted = text;
+          void run("ann", async () => {
+            const saved = await api.putSettings({ tablet: { announcements: submitted } });
+            if (draft.current === submitted) {
+              draft.current = saved.tablet.announcements;
+              setText(saved.tablet.announcements);
+              setDirty(false);
+            }
+          });
+        }}>
           Salvar e enviar
         </button>
       </div>
@@ -348,7 +392,7 @@ function PollResultView({ p, compact }: { p: PollResult; compact?: boolean }) {
     <div className="pollres">
       <div className="pollres-head">
         <span className="pollres-name">{p.pollName}</span>
-        <span className="muted small">{p.totalVoted}/{p.totalParticipants} votaram</span>
+        <span className="muted small">{p.totalParticipants === null ? `${p.totalVoted} respostas` : `${p.totalVoted}/${p.totalParticipants} votaram`}</span>
       </div>
       {!compact && p.question && <div className="pollres-q muted small">{p.question}</div>}
       {attendance !== null &&
@@ -364,9 +408,9 @@ function PollResultView({ p, compact }: { p: PollResult; compact?: boolean }) {
         {p.options.map((o, i) => (
           <li key={i} className="pollres-opt">
             <span className="pollres-opt-label" title={o.label}>{o.label}</span>
-            <span className="pollres-bar"><span className="pollres-barfill" style={{ width: `${o.percent}%` }} /></span>
+            <span className="pollres-bar"><span className="pollres-barfill" style={{ width: `${o.percent ?? 0}%` }} /></span>
             <span className="pollres-opt-val">
-              {numeric ? `${o.votes}×${o.label}=${o.votes * Number(o.label)}` : `${o.votes} (${o.percent}%)`}
+              {numeric ? `${o.votes}×${o.label}=${o.votes * Number(o.label)}` : o.percent === null ? `${o.votes} respostas` : `${o.votes} (${o.percent}%)`}
             </span>
           </li>
         ))}
@@ -489,28 +533,37 @@ function lanAddr(addrs: string[]): string | undefined {
   return [...lan].sort((a, b) => score(a) - score(b))[0];
 }
 function RemoteQrCard() {
+  const [remote, setRemote] = useState<RemoteIntegrationStatus|null>(null);
+  const [remoteError,setRemoteError] = useState('');
   const [net, setNet] = useState<{ addresses: string[]; port: number } | null>(null);
   const [small, setSmall] = useState("");
   const [large, setLarge] = useState("");
   const [big, setBig] = useState(false);
   useEffect(() => {
     api.net().then((n) => setNet({ addresses: n.addresses, port: n.port })).catch(() => void 0);
+    const refresh=()=>void api.remoteStatus().then(setRemote).catch(()=>{});refresh();
+    const timer=setInterval(refresh,5000);return()=>clearInterval(timer);
   }, []);
   const addr = net ? lanAddr(net.addresses) : undefined;
-  const url = addr ? `http://${addr}:${net!.port}/remote.html` : "";
+  const url = remote?.publicUrl ? (remote.phase==='connected' ? remote.publicUrl+'/remote.html' : '') : addr ? `http://${addr}:${net!.port}/remote.html` : "";
+  const qrUrl = url;
   useEffect(() => {
     if (!url) { setSmall(""); setLarge(""); return; }
-    QRCode.toDataURL(url, { width: 240, margin: 1 }).then(setSmall).catch(() => void 0);
-    QRCode.toDataURL(url, { width: 640, margin: 2 }).then(setLarge).catch(() => void 0);
-  }, [url]);
+    QRCode.toDataURL(qrUrl, { width: 240, margin: 1 }).then(setSmall).catch(() => void 0);
+    QRCode.toDataURL(qrUrl, { width: 640, margin: 2 }).then(setLarge).catch(() => void 0);
+  }, [qrUrl]);
   return (
     <Card icon="📱" title="Controle remoto (celular)">
+        <p className="small">{remote?.devices ?? 0} aparelhos conectados · acesso sem código</p>
+        <div className="remote-devices">{remote?.deviceList?.map(device=><div className="remote-device" key={device.id}><div><b>{device.label}</b><div className="small muted">Conectado em {new Date(device.createdAt).toLocaleString('pt-BR')}</div></div><button className="secondary small" onClick={async()=>{try{setRemoteError('');await api.remoteRevokeDevice(device.id);setRemote(await api.remoteStatus());}catch(e){setRemoteError(String(e));}}}>Revogar acesso</button></div>)}</div>
+        {!!remote?.devices && <button className="secondary small" onClick={async()=> {try {setRemoteError('');await api.remoteRevoke();setRemote(await api.remoteStatus());}catch(e){setRemoteError(String(e));}}}>Revogar todos ({remote.devices})</button>}
+        {remoteError && <p className="err small">{remoteError}</p>}
       {url ? (
         <>
           <div className="qr-row">
             <img className="qr-sm" src={small} alt="QR do controle do cronômetro" onClick={() => setBig(true)} title="Toque para ampliar" />
             <div className="qr-info">
-              <p className="muted small">Escaneie para abrir o <b>controle do cronômetro</b> no celular. Toque no QR para ampliar e mostrar.</p>
+              <p className="muted small">Escaneie o QR ou abra o link e toque em <b>Conectar este aparelho</b>. Sem código. Depois instale o controle no celular.</p>
               <code className="qr-url">{url}</code>
             </div>
           </div>
@@ -525,7 +578,7 @@ function RemoteQrCard() {
           )}
         </>
       ) : (
-        <p className="muted small">Sem IP de rede local (conecte o PC ao Wi-Fi do Salão). O Tailscale não serve — não está nos aparelhos de todos.</p>
+        <p className="muted small">{remote?.publicUrl?'Aguardando a publicação e confirmação do link fixo Cloudflare…':'Sem IP de rede local. Conecte o PC ao Wi-Fi do Salão ou configure o link Cloudflare.'}</p>
       )}
     </Card>
   );

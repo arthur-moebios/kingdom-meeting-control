@@ -56,6 +56,7 @@ export type RaisedHands = z.infer<typeof RaisedHandsSchema>;
 // Meeting / Zoom status snapshot
 // ---------------------------------------------------------------------------
 export const ZoomStatusSchema = z.object({
+  backend: z.enum(["web", "native"]).optional(),
   state: ZoomStateSchema,
   authenticated: z.boolean(),
   browserRunning: z.boolean(),
@@ -181,7 +182,7 @@ export const PollOptionResultSchema = z.object({
   label: z.string(),
   votes: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
-  percent: z.number().nonnegative(),
+  percent: z.number().nonnegative().nullable(),
 });
 export type PollOptionResult = z.infer<typeof PollOptionResultSchema>;
 
@@ -191,7 +192,7 @@ export const PollResultSchema = z.object({
   pollName: z.string(),
   question: z.string(),
   totalVoted: z.number().int().nonnegative(),
-  totalParticipants: z.number().int().nonnegative(),
+  totalParticipants: z.number().int().nonnegative().nullable(),
   options: z.array(PollOptionResultSchema),
   /** ISO timestamp of the latest capture for this day+poll. */
   capturedAt: z.string(),
@@ -289,6 +290,19 @@ export const SettingsSchema = z.object({
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
+/** Deliberately excludes Zoom, participants, settings and credentials. */
+export type TimerRoom = 'main' | 'b';
+export interface TimerNames { name: string; secondName: string; }
+export interface TimerDetails { assignments: Record<string,TimerNames>; numbers?:Record<string,string>; conductor: string; helper: string; date: string | null; }
+export interface ProgrammePart { number: string; section: string; title: string; allottedSec: number; name: string; secondName: string; }
+export interface ImportedProgramme { id: string; date: string; label: string; kind: MeetingKind; sourceFile: string; mainParts: ProgrammePart[]; roomBParts: ProgrammePart[]; conductorB: string; warnings: string[]; }
+export interface RemoteTimerState { meeting: MeetingSchedule; warnSeconds: number; serverNow: string; room?: TimerRoom; details?: TimerDetails; period?:{weekLabel:string;dateLabel:string|null;matchesMainWeek:boolean}; }
+export interface RemoteIntegrationStatus {
+  bundled: boolean; version: string; authorized: boolean; phase: string; enabled: boolean;
+  configured: boolean; publicUrl: string; authorizationUrl: string | null; busy: boolean; error: string | null; publicReady:boolean;
+  devices: number; deviceList:{id:string;label:string;createdAt:string}[]; gatewayPort: number; gatewayAvailable: boolean;
+}
+
 /** Partial update accepted by PUT /settings. */
 export const SettingsUpdateSchema = SettingsSchema.deepPartial();
 export type SettingsUpdate = z.infer<typeof SettingsUpdateSchema>;
@@ -340,6 +354,7 @@ export const SnapshotSchema = z.object({
   presentation: PresentationStatusSchema,
   capabilities: CapabilitiesSchema,
   meeting: MeetingScheduleSchema,
+  meetingNames: z.record(z.object({name:z.string(),secondName:z.string()})).optional(),
   settings: SettingsSchema,
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;

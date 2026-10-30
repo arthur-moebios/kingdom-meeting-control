@@ -16,6 +16,11 @@ export function registerWebSocket(app: FastifyInstance, ctx: AppContext): void {
       socket.send(JSON.stringify(frame));
     }
   };
+  const offNames=ctx.programmes?.subscribe(room=> {
+    if(room!=='main')return;
+    const snapshot=ctx.getSnapshot();for(const socket of clients)send(socket,{kind:'snapshot',snapshot});
+  });
+  app.addHook('onClose',async()=>offNames?.());
 
   // Broadcast every domain event to all connected clients, followed by a fresh
   // snapshot so panels and the tablet reflect live state (timers, participants,

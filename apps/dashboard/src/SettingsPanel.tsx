@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Display, Settings } from "@kmc/shared-types";
 import { api } from "./api.js";
+import { CloudflarePanel } from './CloudflarePanel.js';
 
 interface Props {
+  native?: boolean;
   displays: Display[];
   onClose: () => void;
   onSaved: () => void;
@@ -13,7 +15,7 @@ interface Props {
  * edit meeting / share / reconnect / retention, and saves via PUT /settings.
  * Experimental options are labelled honestly inline.
  */
-export function SettingsPanel({ displays, onClose, onSaved }: Props) {
+export function SettingsPanel({ displays, onClose, onSaved, native = false }: Props) {
   const [form, setForm] = useState<Settings | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState<string | null>(null);
@@ -80,6 +82,7 @@ export function SettingsPanel({ displays, onClose, onSaved }: Props) {
   return (
     <Overlay onClose={onClose} title="Configurações">
       <div className="settings">
+        <CloudflarePanel />
         <fieldset>
           <legend>Reunião</legend>
           <Field label="ID da reunião">
@@ -99,8 +102,8 @@ export function SettingsPanel({ displays, onClose, onSaved }: Props) {
           </Field>
           {m.joinMode === "start" && (
             <p className="muted small warn-text">
-              Iniciar como anfitrião via Zoom Web não é suportado nesta fase — o operador deve
-              iniciar a reunião e o sistema entra.
+              {native ? 'O Zoom desktop usa a conta já conectada; ela precisa ser anfitriã desta sala.' :
+                'Iniciar como anfitrião via Zoom Web não é suportado nesta fase — o operador deve iniciar a reunião e o sistema entra.'}
             </p>
           )}
           <Field label="Horário programado">
@@ -109,13 +112,13 @@ export function SettingsPanel({ displays, onClose, onSaved }: Props) {
           <Check label="Entrar automaticamente" checked={m.autoJoin} onChange={(v) => setMeeting({ autoJoin: v })} />
           <Check label="Iniciar reunião automaticamente" checked={m.autoStartMeeting} onChange={(v) => setMeeting({ autoStartMeeting: v })} />
           <Check label="Microfone ligado ao entrar" checked={m.micOnJoin} onChange={(v) => setMeeting({ micOnJoin: v })} />
-          <Check label="Câmera ligada ao entrar" checked={m.cameraOnJoin} onChange={(v) => setMeeting({ cameraOnJoin: v })} />
+          <Check label="Câmera ligada ao entrar" disabled={native} checked={m.cameraOnJoin} onChange={(v) => setMeeting({ cameraOnJoin: v })} />
           <Field label="Câmera padrão">
-            <input value={m.cameraLabel} onChange={(e) => setMeeting({ cameraLabel: e.target.value })} placeholder='ex.: "OBS" (vazio = atual do Zoom)' />
+            <input disabled={native} value={m.cameraLabel} onChange={(e) => setMeeting({ cameraLabel: e.target.value })} placeholder='ex.: "OBS" (vazio = atual do Zoom)' />
           </Field>
           <p className="muted small">
-            Seleciona a câmera cujo nome contém esse texto ao entrar (ex.: OBS Virtual Camera). O
-            dispositivo precisa existir — a câmera do OBS só aparece com o OBS aberto.
+            {native ? 'Ligar e selecionar a câmera pelo app ainda está em migração para o Zoom desktop.' :
+              'Seleciona a câmera cujo nome contém esse texto ao entrar (ex.: OBS Virtual Camera). O dispositivo precisa existir — a câmera do OBS só aparece com o OBS aberto.'}
           </p>
         </fieldset>
 
@@ -146,12 +149,12 @@ export function SettingsPanel({ displays, onClose, onSaved }: Props) {
           </Field>
           {displays.length === 0 && <p className="muted small">Monitores são enumerados apenas no Windows.</p>}
           <Check label="Compartilhar áudio da mídia (experimental)" checked={sh.shareAudio} onChange={(v) => setShare({ shareAudio: v })} />
-          <Field label="Título da tela p/ auto-captura">
+          {!native && <Field label="Título da tela p/ auto-captura">
             <input value={sh.autoSourceTitle} onChange={(e) => setShare({ autoSourceTitle: e.target.value })} placeholder='ex.: "Tela 2" (experimental)' />
-          </Field>
+          </Field>}
           <p className="muted small">
-            Usado pelo modo automático para escolher o monitor sem o seletor do sistema. Frágil —
-            requer reinício para aplicar e validação ao vivo.
+            {native ? 'O compartilhamento nativo acompanha a janela de mídia do JW Library.' :
+              'Usado pelo modo automático para escolher o monitor sem o seletor do sistema. Frágil — requer reinício para aplicar e validação ao vivo.'}
           </p>
         </fieldset>
 
@@ -230,10 +233,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Check({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <label className="checkrow">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" disabled={disabled} checked={checked} onChange={(e) => onChange(e.target.checked)} />
       <span>{label}</span>
     </label>
   );

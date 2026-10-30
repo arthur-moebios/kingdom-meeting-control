@@ -1,29 +1,21 @@
-Kingdom Meeting Control — App Windows (pacote portatil)
-=======================================================
+Kingdom Meeting Control 0.2.0 — Windows / Zoom nativo
+===================================================
 
-Conteudo:
-  KingdomMeetingControl.exe   -> inicia o app (servidor + abre o painel)
-  node.exe, server.mjs        -> o backend empacotado
-  public\                     -> painel do operador + view da tribuna
-  ms-playwright\              -> navegador Chromium (automacao do Zoom)
-  install-autostart.ps1       -> inicia no logon (opcional)
+Este pacote substitui a versão baseada no Chromium.
+Instale o Zoom desktop e o JW Library antes de usar.
 
-Como usar
----------
-1) Extraia esta pasta em um local fixo, ex.: C:\KingdomMeetingControl
-2) De 2 cliques em KingdomMeetingControl.exe
-   - Abre o PAINEL DO OPERADOR numa janela propria do app (WebView2)
-   - Abre uma janela do Chromium: faca login no Zoom UMA vez (fica salvo)
-3) (Opcional) Iniciar sozinho no logon:
-   - Clique direito em install-autostart.ps1 > Executar com PowerShell
+1. Execute KingdomMeetingControl.exe. O painel abre em uma janela do app.
+2. Configure a reunião no painel. O Zoom desktop usa o login já realizado.
+3. Configure o link Cloudflare e abra o PWA para controlar pelo celular.
+   Informe um nome obrigatório para identificar o aparelho, sem código.
+4. Importe os PDFs de programação por inteiro. Datas e nomes ficam no PC;
+   a Sala B mantém cronômetros independentes no PWA.
 
-Acesso
-------
-Uso local, sem token. O painel abre direto, sem senha.
-(Opcional) Para exigir token, defina as variaveis de ambiente
-KMC_ADMIN_TOKEN e KMC_VIEWER_TOKEN antes de iniciar.
+Inclui Node, Python, Frida, pypdf, WebView2 e cloudflared.
+Python e Chromium não precisam ser instalados separadamente.
+Se necessário, instale o runtime Microsoft Edge WebView2 no Windows.
 
-Tablet (tribuna)
-----------------
-O tablet encontra este PC sozinho na rede (sem IP) e conecta direto.
-O PC precisa estar na MESMA rede Wi-Fi.
+Os dados ficam em data-native, ao lado do executável. Ao atualizar uma
+instalação existente, mantenha essa pasta e as configurações do Cloudflare.
+Nenhum dado pessoal ou credencial do desenvolvedor acompanha o pacote.
+O botão Iniciar com Windows configura a inicialização automática.

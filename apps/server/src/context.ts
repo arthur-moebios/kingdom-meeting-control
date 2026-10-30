@@ -4,11 +4,15 @@ import { spawn } from "node:child_process";
 import type pino from "pino";
 import { repoRoot, type AppConfig } from "@kmc/config";
 import { ZoomAutomationService } from "@kmc/zoom-automation";
+import { NativeZoomService } from './nativeZoom.js';
 import { PresentationMonitorService } from "@kmc/presentation-monitor";
 import { MeetingService } from "@kmc/meeting";
 import type { PollResult, Settings, Snapshot } from "@kmc/shared-types";
 import { Db } from "./db.js";
 import { EventBus } from "./eventBus.js";
+import { CloudflareIntegration } from './cloudflare.js';
+import { MobileTimers } from './mobileTimers.js';
+import { MobileProgrammes } from './mobileProgrammes.js';
 import type { LogRingBuffer } from "./logger.js";
 
 /**
@@ -18,9 +22,13 @@ import type { LogRingBuffer } from "./logger.js";
 export class AppContext {
   readonly bus = new EventBus();
   readonly db: Db;
-  readonly zoom: ZoomAutomationService;
+  readonly zoom: ZoomAutomationService | NativeZoomService;
   readonly presentation: PresentationMonitorService;
   readonly meeting: MeetingService;
+  readonly cloudflare: CloudflareIntegration;
+  readonly mobile: MobileTimers;
+  readonly programmes: MobileProgrammes;
+  mobileGatewayReady = false;
   /** Set by index.ts; lets an API call trigger a graceful shutdown. */
   onShutdownRequest: ((reason: string) => void) | null = null;
   private settings: Settings;
@@ -47,7 +55,8 @@ export class AppContext {
       );
     });
 
-    this.zoom = new ZoomAutomationService({
+    const ZoomService = process.env.KMC_ZOOM_BACKEND === 'native' ? NativeZoomService : ZoomAutomationService;
+    this.zoom = new ZoomService({
       log: logger,
       profileDir: cfg.chromiumProfileDir,
       headless: cfg.chromiumHeadless,
@@ -71,6 +80,9 @@ export class AppContext {
       loadState: () => this.db.getKv("meeting"),
       saveState: (json) => this.db.setKv("meeting", json),
     });
+    this.cloudflare = new CloudflareIntegration(repoRoot,cfg.dataDir);
+    this.programmes = new MobileProgrammes(this);
+    this.mobile = new MobileTimers(this);
   }
 
   getSettings(): Settings {
@@ -81,6 +93,7 @@ export class AppContext {
     this.settings = next;
     this.db.saveSettings(next);
     this.db.audit("admin", "settings.update", {});
+    if (this.zoom instanceof NativeZoomService) void this.zoom.applySettings().catch(err => this.logger.warn({ err: String(err) }, 'Native settings failed'));
   }
 
   /** Locate share-picker.ps1 (packaged at base dir, or scripts/win in dev). */
@@ -155,6 +168,7 @@ export class AppContext {
       presentation: this.presentation.getStatus(),
       capabilities: this.zoom.getCapabilities(),
       meeting: this.meeting.getState(),
+      meetingNames: this.programmes.mainAssignments(),
       settings: this.settings,
     };
   }
@@ -180,7 +194,7 @@ export class AppContext {
 
     // Only auto-join when explicitly configured — never start meetings by surprise.
     if (
-      this.settings.meeting.autoJoin &&
+      (this.settings.meeting.autoJoin || (this.zoom instanceof NativeZoomService && this.settings.meeting.autoStartMeeting)) &&
       this.settings.meeting.meetingId &&
       (this.zoom.state === "AUTHENTICATED")
     ) {
@@ -233,6 +247,7 @@ export class AppContext {
   }
 
   async shutdown(): Promise<void> {
+    this.cloudflare.close();
     this.presentation.stop();
     await this.zoom.shutdown();
     this.db.close();

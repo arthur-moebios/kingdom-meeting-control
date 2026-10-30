@@ -1,0 +1,6 @@
+Windows Registry Editor Version 5.00
+
+; Restore the state observed before this research: this value was absent.
+; Use only if the value still belongs to this test; the Python restore checks this.
+[HKEY_CURRENT_USER\Software\Policies\Zoom\Zoom Meetings\Meetings]
+"AlwaysShowVideoPreviewDialog"=-

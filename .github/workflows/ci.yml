@@ -23,5 +23,7 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: SQLite names persistence across restarts
+        run: node --import tsx scripts/test-mobile-names-persistence.ts
       - name: Build dashboard + tablet view
         run: npm run build:dashboard

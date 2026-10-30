@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { MeetingPart, MeetingSchedule } from "@kmc/shared-types";
+import type { MeetingPart, MeetingSchedule, TimerNames } from "@kmc/shared-types";
 import { api } from "./api.js";
 import { useClock, elapsedSec, fmtClock, parseClock } from "./timer.js";
 
@@ -13,7 +13,7 @@ function phase(remaining: number, allotted: number, warnSeconds: number): "idle"
   return "ok";
 }
 
-export function MeetingPanel({ meeting, warnSeconds }: { meeting: MeetingSchedule; warnSeconds: number }) {
+export function MeetingPanel({ meeting, names, warnSeconds, compact = false }: { meeting: MeetingSchedule; names?:Record<string,TimerNames>; warnSeconds: number; compact?: boolean }) {
   const anyRunning = meeting.parts.some((p) => p.running);
   const now = useClock(anyRunning);
   const [busy, setBusy] = useState(false);
@@ -45,6 +45,8 @@ export function MeetingPanel({ meeting, warnSeconds }: { meeting: MeetingSchedul
             {meeting.title && <span className="m-theme"> · {meeting.title}</span>}
           </div>
         </div>
+        <details className="m-config" open={compact ? undefined : true}>
+          {compact && <summary>Programação ▾</summary>}
         <div className="m-load">
           <button
             className={meeting.kind === "midweek" ? "" : "secondary"}
@@ -75,6 +77,7 @@ export function MeetingPanel({ meeting, warnSeconds }: { meeting: MeetingSchedul
             ⟳ WOL
           </button>
         </div>
+        </details>
       </div>
 
       {meeting.loading && <div className="m-info">Carregando do wol.jw.org…</div>}
@@ -94,9 +97,10 @@ export function MeetingPanel({ meeting, warnSeconds }: { meeting: MeetingSchedul
             const isActive = p.id === meeting.activePartId;
             return (
               <li key={p.id} className={`m-row ${isActive ? "active" : ""} ph-${ph}`}>
-                <button className="m-rowmain" onClick={() => run(() => api.meetingActive(p.id))} title="Tornar parte atual">
+                <button className="m-rowmain" onClick={() => run(() => api.meetingActive(p.id))} title={`Tornar parte atual: ${p.title}`}>
                   <span className="m-sec">{p.section}</span>
                   <span className="m-title">{p.title}</span>
+                  {(names?.[p.id]?.name || names?.[p.id]?.secondName) && <span className="m-assignment">{[names?.[p.id]?.name,names?.[p.id]?.secondName].filter(Boolean).join(' / ')}</span>}
                 </button>
                 <span className="m-alloc">{Math.round(p.allottedSec / 60)}m</span>
                 <span className={`m-rem ph-${ph}`}>{p.allottedSec > 0 ? fmtClock(remaining) : fmtClock(el)}</span>
@@ -141,12 +145,14 @@ export function ActivePart({
   warnSeconds,
   busy,
   run,
+  commands,
 }: {
   part: MeetingPart;
   now: number;
   warnSeconds: number;
   busy: boolean;
   run: (fn: RunFn) => Promise<void>;
+  commands?: {start:(id:string)=>Promise<unknown>;pauseNext:(id:string)=>Promise<unknown>;reset:(id:string)=>Promise<unknown>};
 }) {
   const el = elapsedSec(part, now);
   const remaining = part.allottedSec - el;
@@ -169,13 +175,13 @@ export function ActivePart({
       )}
       <div className="m-active-ctl">
         {part.running ? (
-          <button className="danger" disabled={busy} onClick={() => run(() => api.meetingPauseNext(part.id))}>
+            <button className="danger" disabled={busy} onClick={() => run(() => commands ? commands.pauseNext(part.id) : api.meetingPauseNext(part.id))}>
             ❚❚ Pausar e próxima
           </button>
         ) : (
-          <button disabled={busy} onClick={() => run(() => api.meetingStart(part.id))}>▶ Iniciar</button>
+          <button disabled={busy} onClick={() => run(() => commands ? commands.start(part.id) : api.meetingStart(part.id))}>▶ Iniciar</button>
         )}
-        <button className="secondary" disabled={busy} onClick={() => run(() => api.meetingReset(part.id))}>↺ Zerar</button>
+        <button className="secondary" disabled={busy} onClick={() => run(() => commands ? commands.reset(part.id) : api.meetingReset(part.id))}>↺ Zerar</button>
         <span className="m-elapsed muted small">Decorrido {fmtClock(el)} / {fmtClock(part.allottedSec)}</span>
       </div>
     </div>

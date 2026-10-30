@@ -7,6 +7,7 @@ import { AppContext } from "./context.js";
 import { buildApp } from "./app.js";
 import { DiscoveryService } from "./discovery.js";
 import { BeaconService } from "./beacon.js";
+import { buildRemoteGateway } from './mobileTimers.js';
 
 const VERSION = "0.1.0";
 
@@ -41,6 +42,11 @@ async function main(): Promise<void> {
   const app = await buildApp(ctx);
 
   await app.listen({ host: cfg.host, port: cfg.port });
+  const remoteGateway=await buildRemoteGateway(ctx);
+  try {
+    await remoteGateway.listen({host:'127.0.0.1',port:ctx.cloudflare.gatewayPort});
+    ctx.mobileGatewayReady=true;ctx.cloudflare.start();
+  } catch {logger.error({},'Mobile gateway unavailable on loopback port 4320');}
   logger.info({ url: `http://${cfg.host}:${cfg.port}` }, "HTTP + WebSocket listening");
 
   // LAN auto-discovery (mDNS) so the tablet finds this PC with no hardcoded IP.
@@ -74,6 +80,8 @@ async function main(): Promise<void> {
     try {
       await discovery.stop();
       await beacon.stop();
+      ctx.cloudflare.close();
+      await remoteGateway.close();
       await app.close();
       await ctx.shutdown();
     } finally {
@@ -82,6 +90,10 @@ async function main(): Promise<void> {
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  if (process.env.KMC_PARENT_PROCESS_MANAGED === '1') {
+    process.stdin.on('end', () => void shutdown('launcher-closed'));
+    process.stdin.resume();
+  }
   // Lets the dashboard "Encerrar" button stop the app (no console to Ctrl+C).
   ctx.onShutdownRequest = (reason) => void shutdown(reason);
 }

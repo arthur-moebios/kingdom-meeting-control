@@ -1,5 +1,22 @@
 # Kingdom Meeting Control
 
+**Windows 0.2.0 — Zoom nativo:** substitui o pacote anterior baseado no Chromium.
+Inclui integração com Zoom desktop/JW Library, câmera do anfitrião, painel
+redimensionável, cronômetros, anúncios, enquetes e início com Windows.
+O instalador e o ZIP da [release Windows](https://github.com/arthur-moebios/kingdom-meeting-control/releases/tag/pc-latest)
+são gerados automaticamente em pushes para `main`.
+
+**Celular/PWA:** o pacote Windows inclui `cloudflared` e configuração de link
+fixo pela interface. O controlador mobile exige um nome, sem código de entrada,
+e permite revogar aparelhos. Inclui Sala B independente, importação automática
+de datas e nomes e compartilhamento direto de imagem. Veja [Cloudflare e PWA](docs/cloudflare-mobile-pwa.md)
+para autorizar a conta, configurar o domínio e instalar no celular.
+
+## Documentação histórica do backend web
+
+O pacote publicado usa o backend nativo. A implementação web original permanece
+no código; o texto abaixo documenta essa arquitetura anterior.
+
 Automated **Zoom Web** controller for a Kingdom Hall A/V operator PC (Windows),
 built to replace manual Zoom Desktop operation with a persistent, automated
 browser session, exposing real meeting state over a local API + WebSocket, with

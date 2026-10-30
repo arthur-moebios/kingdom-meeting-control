@@ -1,0 +1,6 @@
+Windows Registry Editor Version 5.00
+
+; Documented user-scoped Zoom setting. No other preferences are changed.
+; https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0065466
+[HKEY_CURRENT_USER\Software\Policies\Zoom\Zoom Meetings\Meetings]
+"AlwaysShowVideoPreviewDialog"=dword:00000000

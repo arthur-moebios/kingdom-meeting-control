@@ -186,6 +186,7 @@ export class MeetingService {
   start(id: string): MeetingSchedule {
     const target = this.part(id);
     if (!target) return this.getState();
+    if (target.running) return this.getState();
     // Only one timer runs at a time — pause any other running part.
     for (const p of this.state.parts) if (p.id !== id && p.running) this.accrue(p);
     target.running = true;
@@ -269,5 +270,13 @@ export class MeetingService {
       p.baseElapsedSec = 0;
     }
     return this.changed();
+  }
+
+  /** Explicit import; callers preview the programme before replacing timers. */
+  replaceProgramme(input: {weekLabel:string;title:string;kind:MeetingKind;parts:{section:string;title:string;allottedSec:number}[]}): MeetingSchedule {
+    this.state=MeetingScheduleSchema.parse({source:'manual',kind:input.kind,weekLabel:input.weekLabel,title:input.title,
+      activePartId:null,parts:input.parts.map((part,order)=>({id:randomUUID(),order,section:part.section,title:part.title,allottedSec:part.allottedSec,source:'manual'}))});
+    this.state.activePartId=this.state.parts[0]?.id ?? null;
+    return this.changed(true);
   }
 }

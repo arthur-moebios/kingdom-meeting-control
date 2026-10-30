@@ -11,7 +11,7 @@ import { NotSupportedError } from "@kmc/zoom-web-adapter";
 import type { AppContext } from "./context.js";
 import { requireAdmin, requireViewer } from "./auth.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 /** Minimal recursive merge for partial settings updates. */
 function deepMerge<T>(base: T, patch: unknown): T {
@@ -27,6 +27,10 @@ function deepMerge<T>(base: T, patch: unknown): T {
 export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   const viewer = { preHandler: requireViewer(ctx.cfg) };
   const admin = { preHandler: requireAdmin(ctx.cfg) };
+  const remoteAdmin = {preHandler:[requireAdmin(ctx.cfg),async(req:import('fastify').FastifyRequest,reply:import('fastify').FastifyReply)=> {
+    try {if(new URL(String(req.headers.origin)).host===req.headers.host)return;}catch{}
+    return reply.code(403).send({error:'invalid_origin'});
+  }]};
   const startedAt = Date.now();
 
   // -- health (no auth) ------------------------------------------------------
@@ -99,6 +103,10 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get("/api/v1/zoom/status", viewer, async () => ctx.zoom.getStatus());
 
   app.post("/api/v1/zoom/start", admin, async (_req, reply) => {
+    if (ctx.zoom.getStatus().backend === 'native') {
+      await ctx.zoom.join();
+      return ctx.zoom.getStatus();
+    }
     // Host-start is unproven on Web client — report honestly, do not fake.
     ctx.db.audit("admin", "zoom.start.attempt", {});
     await reply.code(501).send({
@@ -231,6 +239,10 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.post("/api/v1/share/start", admin, async (_req, reply) => {
     ctx.db.audit("admin", "share.start", { mode: ctx.getSettings().share.mode });
     try {
+      if (ctx.zoom.getStatus().backend === 'native') {
+        const ok = await ctx.zoom.startMonitorShare();
+        return { ok, mode: 'native-window' };
+      }
       const opened = await ctx.zoom.openSharePicker();
       if (!opened) {
         await reply.code(409).send({
@@ -258,6 +270,10 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.post("/api/v1/share/stop", admin, async () => {
     ctx.db.audit("admin", "share.stop", {});
+    if (ctx.zoom.getStatus().backend === 'native') {
+      await ctx.zoom.stopMonitorShare();
+      return { ok: true };
+    }
     ctx.bus.publish("zoom.share.stopped", {});
     return { ok: true, message: "Stop requested; operator confirms in the browser/OS UI." };
   });
@@ -317,6 +333,27 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   // -- settings --------------------------------------------------------------
   app.get("/api/v1/settings", viewer, async () => ctx.getSettings());
+
+  app.post('/api/v1/mobile-programmes/import',{...remoteAdmin,bodyLimit:11_000_000},async(req)=> {
+    const body=req.body as {filename?:unknown;data?:unknown};return ctx.programmes.importPdf(body?.filename,body?.data);
+  });
+  app.get('/api/v1/remote/status',admin,async()=>({...ctx.cloudflare.status(),...ctx.mobile.status(),gatewayPort:ctx.cloudflare.gatewayPort,gatewayAvailable:ctx.mobileGatewayReady}));
+  app.post('/api/v1/remote/pairing',remoteAdmin,async()=>ctx.mobile.status());
+  app.post('/api/v1/remote/devices/:id/revoke',remoteAdmin,async(req)=> {ctx.mobile.revoke((req.params as {id:string}).id);return ctx.mobile.status();});
+  app.post('/api/v1/remote/revoke',remoteAdmin,async()=> {ctx.mobile.revoke();return {ok:true};});
+  app.post('/api/v1/remote/cloudflare/authorize',remoteAdmin,async()=>ctx.cloudflare.authorize());
+  app.post('/api/v1/remote/cloudflare/setup',remoteAdmin,async(req,reply)=> {
+    if(!ctx.mobileGatewayReady)return reply.code(409).send({error:'O gateway mobile não está disponível. Reinicie o app.'});
+    const url=(req.body as {publicUrl?:unknown})?.publicUrl;
+    if(typeof url!=='string')return reply.code(400).send({error:'Informe o endereço fixo.'});
+    try{return await ctx.cloudflare.setup(url);}catch(error){return reply.code(400).send({error:error instanceof Error?error.message:'Configuração não concluída'});}
+  });
+  app.post('/api/v1/remote/cloudflare/enabled',remoteAdmin,async(req,reply)=> {
+    const enabled=(req.body as {enabled?:unknown})?.enabled;
+    if(typeof enabled!=='boolean')return reply.code(400).send({error:'enabled must be boolean'});
+    if(enabled && !ctx.mobileGatewayReady)return reply.code(409).send({error:'O gateway mobile não está disponível. Reinicie o app.'});
+    return ctx.cloudflare.enable(enabled);
+  });
 
   app.put("/api/v1/settings", admin, async (req, reply) => {
     const parsed = SettingsUpdateSchema.safeParse(req.body);

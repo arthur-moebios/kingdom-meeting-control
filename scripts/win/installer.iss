@@ -1,7 +1,7 @@
 ; Inno Setup script for Kingdom Meeting Control (Windows).
 ; Builds a per-user installer (no admin needed) from the assembled "pkg" folder
 ; — the same payload as the portable zip (launcher exe + node + server.mjs +
-; public + Chromium + WebView2 DLLs + the UIA/share PowerShell + C# helpers).
+; public + Python + cloudflared + WebView2 DLLs + native Zoom/JW helpers).
 ;
 ; Per-user install so the app folder stays writable: the server keeps its data
 ; (settings db, Zoom login profile, logs) under the install dir, and those
@@ -17,7 +17,7 @@
   #define OutDir "."
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
 #endif
 #define AppName "Kingdom Meeting Control"
 #define AppExe "KingdomMeetingControl.exe"
