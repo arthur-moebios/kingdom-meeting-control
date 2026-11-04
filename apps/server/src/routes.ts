@@ -10,6 +10,7 @@ import { hostInfo } from "@kmc/config";
 import { NotSupportedError } from "@kmc/zoom-web-adapter";
 import type { AppContext } from "./context.js";
 import { requireAdmin, requireViewer } from "./auth.js";
+import { isDeviceAccess } from "./mobileTimers.js";
 
 const VERSION = "0.2.0";
 
@@ -334,12 +335,30 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   // -- settings --------------------------------------------------------------
   app.get("/api/v1/settings", viewer, async () => ctx.getSettings());
 
+  const dateParam = (req: { params: unknown }) => { const d = (req.params as { date: string }).date; return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null; };
+  app.get("/api/v1/attendance/:date", viewer, async (req, reply) => {
+    const date = dateParam(req); if (!date) return reply.code(400).send({ error: "invalid_date" });
+    return { date, presencial: ctx.db.getPresencial(date) };
+  });
+  app.put("/api/v1/attendance/:date", admin, async (req, reply) => {
+    const date = dateParam(req), n = (req.body as { presencial?: unknown } | null)?.presencial;
+    if (!date) return reply.code(400).send({ error: "invalid_date" });
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 100000) return reply.code(400).send({ error: "invalid_presencial" });
+    ctx.db.setPresencial(date, n); ctx.db.audit("admin", "attendance.presencial", { date, presencial: n });
+    return { date, presencial: n };
+  });
   app.post('/api/v1/mobile-programmes/import',{...remoteAdmin,bodyLimit:11_000_000},async(req)=> {
     const body=req.body as {filename?:unknown;data?:unknown};return ctx.programmes.importPdf(body?.filename,body?.data);
   });
   app.get('/api/v1/remote/status',admin,async()=>({...ctx.cloudflare.status(),...ctx.mobile.status(),gatewayPort:ctx.cloudflare.gatewayPort,gatewayAvailable:ctx.mobileGatewayReady}));
   app.post('/api/v1/remote/pairing',remoteAdmin,async()=>ctx.mobile.status());
   app.post('/api/v1/remote/devices/:id/revoke',remoteAdmin,async(req)=> {ctx.mobile.revoke((req.params as {id:string}).id);return ctx.mobile.status();});
+  app.post('/api/v1/remote/devices/:id/access',remoteAdmin,async(req,reply)=> {
+    const access=(req.body as {access?:unknown}|null)?.access;
+    if(!isDeviceAccess(access))return reply.code(400).send({error:'invalid_access'});
+    if(!ctx.mobile.setAccess((req.params as {id:string}).id,access))return reply.code(404).send({error:'device_not_found'});
+    return ctx.mobile.status();
+  });
   app.post('/api/v1/remote/revoke',remoteAdmin,async()=> {ctx.mobile.revoke();return {ok:true};});
   app.post('/api/v1/remote/cloudflare/authorize',remoteAdmin,async()=>ctx.cloudflare.authorize());
   app.post('/api/v1/remote/cloudflare/setup',remoteAdmin,async(req,reply)=> {

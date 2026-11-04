@@ -296,11 +296,13 @@ export interface TimerNames { name: string; secondName: string; }
 export interface TimerDetails { assignments: Record<string,TimerNames>; numbers?:Record<string,string>; conductor: string; helper: string; date: string | null; }
 export interface ProgrammePart { number: string; section: string; title: string; allottedSec: number; name: string; secondName: string; }
 export interface ImportedProgramme { id: string; date: string; label: string; kind: MeetingKind; sourceFile: string; mainParts: ProgrammePart[]; roomBParts: ProgrammePart[]; conductorB: string; warnings: string[]; }
-export interface RemoteTimerState { meeting: MeetingSchedule; warnSeconds: number; serverNow: string; room?: TimerRoom; details?: TimerDetails; period?:{weekLabel:string;dateLabel:string|null;matchesMainWeek:boolean}; }
+/** Papel de um aparelho do PWA: somente leitura, uma sala ou ambas. */
+export type DeviceAccess = 'readonly' | 'main' | 'b' | 'both';
+export interface RemoteTimerState { meeting: MeetingSchedule; warnSeconds: number; serverNow: string; room?: TimerRoom; details?: TimerDetails; period?:{weekLabel:string;dateLabel:string|null;matchesMainWeek:boolean}; access?: DeviceAccess; canWrite?: boolean; }
 export interface RemoteIntegrationStatus {
   bundled: boolean; version: string; authorized: boolean; phase: string; enabled: boolean;
   configured: boolean; publicUrl: string; authorizationUrl: string | null; busy: boolean; error: string | null; publicReady:boolean;
-  devices: number; deviceList:{id:string;label:string;createdAt:string}[]; gatewayPort: number; gatewayAvailable: boolean;
+  devices: number; deviceList:{id:string;label:string;createdAt:string;access:DeviceAccess}[]; gatewayPort: number; gatewayAvailable: boolean;
 }
 
 /** Partial update accepted by PUT /settings. */
