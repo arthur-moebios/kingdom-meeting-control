@@ -32,11 +32,14 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return (await res.json()) as T;
 }
 
-import type { MeetingKind, MeetingSchedule, PollResult, Settings, SettingsUpdate, RemoteIntegrationStatus } from "@kmc/shared-types";
+import type { DeviceAccess, MeetingKind, MeetingSchedule, PollResult, Settings, SettingsUpdate, RemoteIntegrationStatus } from "@kmc/shared-types";
 
 export const api = {
   remoteStatus:()=>req<RemoteIntegrationStatus>('GET','/remote/status'),
   remoteRevokeDevice:(id:string)=>req('POST','/remote/devices/'+encodeURIComponent(id)+'/revoke',{}),
+  remoteSetDeviceAccess:(id:string,access:DeviceAccess)=>req<RemoteIntegrationStatus>('POST','/remote/devices/'+encodeURIComponent(id)+'/access',{access}),
+  attendance:(date:string)=>req<{date:string;presencial:number}>('GET','/attendance/'+date),
+  setAttendance:(date:string,presencial:number)=>req<{date:string;presencial:number}>('PUT','/attendance/'+date,{presencial}),
   remoteRevoke:()=>req('POST','/remote/revoke',{}),
   cloudflareAuthorize:()=>req('POST','/remote/cloudflare/authorize',{}),
   cloudflareSetup:(publicUrl:string)=>req('POST','/remote/cloudflare/setup',{publicUrl}),

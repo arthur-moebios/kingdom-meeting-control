@@ -4,29 +4,37 @@ import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply }
 import websocket from '@fastify/websocket';
 import staticFiles from '@fastify/static';
 import type { WebSocket } from '@fastify/websocket';
-import type { RemoteTimerState, TimerRoom } from '@kmc/shared-types';
+import type { DeviceAccess, RemoteTimerState, TimerRoom } from '@kmc/shared-types';
 import type { AppContext } from './context.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
-interface Device { id:string; label:string; createdAt:string; digest: string; expires: number; }
+const ACCESS: readonly DeviceAccess[] = ['readonly','main','b','both'];
+export const isDeviceAccess = (value: unknown): value is DeviceAccess => ACCESS.includes(value as DeviceAccess);
+interface Device { id:string; label:string; createdAt:string; digest: string; expires: number; access: DeviceAccess; }
 export class MobileTimers {
   private devices: Device[] = [];
   private attempts = new Map<string,{ count: number; expires: number }>();
   constructor(private readonly ctx: AppContext) {
     try { const value=JSON.parse(ctx.db.getKv('remote.devices') || '[]');
       if(Array.isArray(value))this.devices=value.filter(d=>typeof d.digest==='string' && /^[a-f0-9]{64}$/.test(d.digest) && d.expires>Date.now()).slice(0,64)
-        .map(d=>({...d,id:typeof d.id==='string'?d.id:randomBytes(12).toString('hex'),label:typeof d.label==='string'?d.label:'Celular já conectado',createdAt:typeof d.createdAt==='string'?d.createdAt:new Date(d.expires-180*24*3600_000).toISOString()}));
+        .map(d=>({...d,id:typeof d.id==='string'?d.id:randomBytes(12).toString('hex'),label:typeof d.label==='string'?d.label:'Celular já conectado',createdAt:typeof d.createdAt==='string'?d.createdAt:new Date(d.expires-180*24*3600_000).toISOString(),
+          // Migração: aparelhos já pareados sem papel mantêm escrita total; o operador restringe depois.
+          access:isDeviceAccess(d.access)?d.access:'both'}));
     } catch {}
     this.save();
   }
   private save() {this.ctx.db.setKv('remote.devices',JSON.stringify(this.devices));}
   status() {const active=this.devices.filter(d=>d.expires>Date.now());return {devices:active.length,
-    deviceList:active.map(({id,label,createdAt})=>({id,label,createdAt}))};}
+    deviceList:active.map(({id,label,createdAt,access})=>({id,label,createdAt,access}))};}
+  setAccess(id:string,access:DeviceAccess) {const device=this.devices.find(d=>d.id===id);if(!device)return false;device.access=access;this.save();return true;}
   revoke(id?:string) {this.devices=id?this.devices.filter(d=>d.id!==id):[];this.save();}
-  authorize(req: FastifyRequest): boolean {
+  private deviceOf(req: Pick<FastifyRequest,'headers'>): Device|undefined {
     const token=String(req.headers.cookie || '').match(/(?:^|;\s*)kmc_remote=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];
-    return !!token && this.devices.some(d=>d.expires>Date.now() && d.digest===hash(token));
+    return token?this.devices.find(d=>d.expires>Date.now() && d.digest===hash(token)):undefined;
   }
+  authorize(req: FastifyRequest): boolean {return !!this.deviceOf(req);}
+  accessFor(req: Pick<FastifyRequest,'headers'>): DeviceAccess {return this.deviceOf(req)?.access ?? 'readonly';}
+  canWrite(req: Pick<FastifyRequest,'headers'>, room: TimerRoom): boolean {const access=this.accessFor(req);return access==='both' || access===room;}
   pair(label: unknown, address: string): string {
     const name=typeof label==='string'?label.trim():'';
     if(!name || name.length>80)throw Object.assign(new Error('Informe um nome para identificar quem está utilizando (até 80 caracteres).'),{statusCode:400});
@@ -36,10 +44,13 @@ export class MobileTimers {
     attempt.count++;this.attempts.set(address,attempt);
     this.devices=this.devices.filter(d=>d.expires>now);
     if(this.devices.length>=64)throw Object.assign(new Error('Limite de dispositivos. Revogue os pareamentos no painel.'),{statusCode:409});
-    const token=randomBytes(32).toString('base64url');this.devices.push({id:randomBytes(12).toString('hex'),label:name,createdAt:new Date(now).toISOString(),digest:hash(token),expires:now+180*24*3600_000});
+    const token=randomBytes(32).toString('base64url');this.devices.push({id:randomBytes(12).toString('hex'),label:name,createdAt:new Date(now).toISOString(),digest:hash(token),expires:now+180*24*3600_000,access:'readonly'});
     this.save();return token;
   }
-  state(room:TimerRoom='main'): RemoteTimerState {if(this.ctx.programmes)return this.ctx.programmes.state(room);return {meeting:this.ctx.meeting.getState(),warnSeconds:this.ctx.getSettings().meetingSchedule.warnSeconds,serverNow:new Date().toISOString()};}
+  state(room:TimerRoom='main', req?: Pick<FastifyRequest,'headers'>): RemoteTimerState {
+    const base:RemoteTimerState=this.ctx.programmes?this.ctx.programmes.state(room):{meeting:this.ctx.meeting.getState(),warnSeconds:this.ctx.getSettings().meetingSchedule.warnSeconds,serverNow:new Date().toISOString()};
+    return req?{...base,access:this.accessFor(req),canWrite:this.canWrite(req,room)}:base;
+  }
 }
 
 function sameOrigin(req: FastifyRequest): boolean {
@@ -55,7 +66,10 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
   };
   const commandAuth=async(req:FastifyRequest,reply:FastifyReply)=> {
     if(!sameOrigin(req))return reply.code(403).send({error:'invalid_origin'});
-    return auth(req,reply);
+    const denied=await auth(req,reply);if(denied)return denied;
+    // Escrita exige papel na sala do comando (room-b/* é sempre a Sala B); leitura só exige pareamento.
+    const room=req.url.split('?')[0]!.startsWith('/remote-api/room-b/')?'b':roomOf(req);
+    if(!service.canWrite(req,room))return reply.code(403).send({error:'read_only'});
   };
   app.post('/remote-api/pair',{bodyLimit:1024},async(req,reply)=> {
     reply.header('Cache-Control','no-store');
@@ -75,11 +89,11 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     return value;
   };
   const meetingOf=(room:TimerRoom)=>ctx.programmes?ctx.programmes.service(room):ctx.meeting;
-  app.get('/remote-api/state',{preHandler:auth},async(req)=>service.state(roomOf(req)));
+  app.get('/remote-api/state',{preHandler:auth},async(req)=>service.state(roomOf(req),req));
   app.post('/remote-api/active',{preHandler:commandAuth,bodyLimit:1024},async(req,reply)=> {
     const room=roomOf(req),meeting=meetingOf(room),id=(req.body as {partId?:unknown})?.partId;
     if(typeof id!=='string' || !meeting.getState().parts.some(p=>p.id===id))return reply.code(400).send({error:'invalid_part'});
-    meeting.setActive(id);return service.state(room);
+    meeting.setActive(id);return service.state(room,req);
   });
   app.post('/remote-api/part/:id/:action',{preHandler:commandAuth,bodyLimit:1024},async(req,reply)=> {
     const room=roomOf(req),meeting=meetingOf(room),{id,action}=req.params as {id:string;action:string};
@@ -89,7 +103,7 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     else if(action==='pause-next')meeting.pauseAndAdvance(id);
     else if(action==='reset')meeting.reset(id);
     else return reply.code(404).send({error:'not_found'});
-    return service.state(room);
+    return service.state(room,req);
   });
   app.get('/remote-api/programmes',{preHandler:auth},async()=>ctx.programmes?.list() ?? []);
   app.post('/remote-api/programmes/import',{onRequest:commandAuth,bodyLimit:11_000_000},async(req)=> {
@@ -102,14 +116,14 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
   });
   app.post('/remote-api/room-b/prepare',{preHandler:commandAuth},async()=>ctx.programmes.prepareB());
   app.post('/remote-api/details',{preHandler:commandAuth,bodyLimit:64_000},async(req)=>ctx.programmes.saveDetails(roomOf(req),req.body));
-  app.post('/remote-api/room-b/finish',{preHandler:commandAuth},async()=> {
+  app.post('/remote-api/room-b/finish',{preHandler:commandAuth},async(req)=> {
     const meeting=ctx.programmes.service('b');for(const part of meeting.getState().parts)if(part.running)meeting.pause(part.id);
-    return service.state('b');
+    return service.state('b',req);
   });
   const clients=new Map<WebSocket,{req:FastifyRequest;room:TimerRoom}>();
   const send=(socket:WebSocket,client:{req:FastifyRequest;room:TimerRoom})=> {
     if(!service.authorize(client.req)) {socket.close(4401,'pairing_required');return;}
-    if(socket.readyState===socket.OPEN)socket.send(JSON.stringify(service.state(client.room)));
+    if(socket.readyState===socket.OPEN)socket.send(JSON.stringify(service.state(client.room,client.req)));
   };
   app.get('/remote-api/ws',{websocket:true},(socket,req)=> {
     if(!sameOrigin(req) || !service.authorize(req)) {socket.close(4401,'pairing_required');return;}

@@ -36,9 +36,11 @@ it('public gateway never exposes operator pages, snapshots, settings or Zoom con
   expect((await app.inject({url:'/remote-api/state',headers})).statusCode).toBe(401);
 });
 it('paired clients receive only timers and may issue only allowed timer commands',async()=> {
-  const {app,pair,headers,start,kv}=await setup();const {cookie}=await pair();
+  const {app,pair,headers,start,kv,ctx}=await setup();const {cookie}=await pair();
   const response=await app.inject({url:'/remote-api/state',headers:{...headers,cookie}});
-  expect(response.statusCode).toBe(200);expect(Object.keys(response.json()).sort()).toEqual(['meeting','serverNow','warnSeconds']);
+  expect(response.statusCode).toBe(200);expect(Object.keys(response.json()).sort()).toEqual(['access','canWrite','meeting','serverNow','warnSeconds']);
+  expect(response.json()).toMatchObject({access:'readonly',canWrite:false});
+  ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'both');
   expect(response.body).not.toContain('must-not-be-public');expect(response.body).not.toContain('private');
   expect([...kv.values()].join('')).not.toContain(cookie.split('=')[1]);
   expect((await app.inject({method:'POST',url:'/remote-api/part/one/start',headers:{...headers,cookie},payload:{}})).statusCode).toBe(200);
@@ -57,7 +59,7 @@ it('devices connect without codes; individual revocation preserves other devices
   ctx.mobile.revoke();expect((await app.inject({url:'/remote-api/state',headers:{...headers,cookie:second.cookie}})).statusCode).toBe(401);
 });
 it('timer actions and pairing reject a foreign origin or host',async()=> {
-  const {app,pair,headers,start}=await setup();const {cookie}=await pair();
+  const {app,pair,headers,start,ctx}=await setup();const {cookie}=await pair();ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'both');
   expect((await app.inject({method:'POST',url:'/remote-api/part/one/start',headers:{...headers,cookie,origin:'https://evil.example'},payload:{}})).statusCode).toBe(403);
   expect((await app.inject({url:'/remote-api/state',headers:{...headers,cookie,host:'other.example'}})).statusCode).toBe(403);
   expect(start).not.toHaveBeenCalled();
@@ -88,4 +90,34 @@ it('requires a real identification and rejects absent, whitespace or oversized n
   expect(ctx.mobile.status().devices).toBe(0);
   const response=await app.inject({method:'POST',url:'/remote-api/pair',headers,payload:{name:'  João — Sala B  '}});
   expect(response.statusCode).toBe(200);expect(ctx.mobile.status().deviceList[0]!.label).toBe('João — Sala B');
+});
+
+it('new devices are read-only; access scopes writes per room and setAccess changes it',async()=> {
+  const {app,pair,headers,ctx,start}=await setup();const {cookie}=await pair(),id=ctx.mobile.status().deviceList[0]!.id;
+  const h={...headers,cookie},post=(url:string)=>app.inject({method:'POST',url,headers:h,payload:{}});
+  expect(ctx.mobile.status().deviceList[0]!.access).toBe('readonly');
+  expect((await app.inject({url:'/remote-api/state',headers:h})).statusCode).toBe(200);
+  for(const url of ['/remote-api/part/one/start','/remote-api/part/one/reset?room=b','/remote-api/active','/remote-api/details','/remote-api/room-b/prepare']) {
+    const response=await post(url);expect(response.statusCode).toBe(403);expect(response.json()).toEqual({error:'read_only'});
+  }
+  expect(start).not.toHaveBeenCalled();
+  expect(ctx.mobile.setAccess(id,'main')).toBe(true);
+  expect((await post('/remote-api/part/one/start')).statusCode).toBe(200);expect(start).toHaveBeenCalledTimes(1);
+  expect((await post('/remote-api/part/one/start?room=b')).statusCode).toBe(403);
+  expect((await post('/remote-api/room-b/finish')).statusCode).toBe(403);
+  expect((await app.inject({url:'/remote-api/state?room=b',headers:h})).json()).toMatchObject({access:'main',canWrite:false});
+  ctx.mobile.setAccess(id,'both');
+  expect((await post('/remote-api/part/one/start')).statusCode).toBe(200);
+  expect(ctx.mobile.setAccess('nope','b')).toBe(false);
+});
+it('access b writes only room B (ctx has no room-B service, so 403 on main is enough)',async()=> {
+  const {app,pair,headers,ctx}=await setup();const {cookie}=await pair();ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'b');
+  expect((await app.inject({method:'POST',url:'/remote-api/part/one/start',headers:{...headers,cookie},payload:{}})).statusCode).toBe(403);
+});
+it('migrates device records without access to both',async()=> {
+  const {ctx,kv,pair}=await setup();await pair();
+  kv.set('remote.devices',JSON.stringify(JSON.parse(kv.get('remote.devices')!).map(({access,...d}:{access:string})=>d)));
+  expect(new MobileTimers(ctx).status().deviceList[0]!.access).toBe('both');
+  kv.set('remote.devices',JSON.stringify(JSON.parse(kv.get('remote.devices')!).map((d:object)=>({...d,access:'main'}))));
+  expect(new MobileTimers(ctx).status().deviceList[0]!.access).toBe('main');
 });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
-import type { CapabilityStatus, PollResult, RemoteIntegrationStatus } from "@kmc/shared-types";
+import type { CapabilityStatus, DeviceAccess, PollResult, RemoteIntegrationStatus } from "@kmc/shared-types";
 import { api } from "./api.js";
 import { useLiveState } from "./useLiveState.js";
 import { SettingsPanel } from "./SettingsPanel.js";
@@ -342,6 +342,13 @@ function fmtDate(date: string): string {
 
 function EnquetesCard({ busy, run, lastEvent }: { busy: string | null; run: RunNamed; lastEvent: string | null }) {
   const [history, setHistory] = useState<PollResult[]>([]);
+  const [presencial, setPresencial] = useState(0), [draft, setDraft] = useState("0");
+  const savePresencial = (raw: string) => {
+    const n = Math.max(0, Math.floor(Number(raw) || 0));
+    setDraft(String(n));
+    if (n !== presencial) api.setAttendance(todayStr(), n).then((r) => { setPresencial(r.presencial); setDraft(String(r.presencial)); }).catch(() => void 0);
+  };
+  useEffect(() => { api.attendance(todayStr()).then((r) => { setPresencial(r.presencial); setDraft(String(r.presencial)); }).catch(() => void 0); }, []);
   const load = () => api.pollsHistory().then((r) => setHistory(r.results)).catch(() => void 0);
   useEffect(() => {
     load();
@@ -366,8 +373,13 @@ function EnquetesCard({ busy, run, lastEvent }: { busy: string | null; run: RunN
       {todays.length === 0 ? (
         <p className="muted small">Sem resultados de enquete hoje. A captura é automática enquanto a enquete está aberta no Zoom.</p>
       ) : (
-        todays.map((p) => <PollResultView key={p.pollName} p={p} />)
+        todays.map((p) => <PollResultView key={p.pollName} p={p} presencial={presencial} />)
       )}
+      <label className="small" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+        Assistência presencial (hoje)
+        <input type="number" min={0} style={{ width: 80 }} value={draft} onChange={(e) => setDraft(e.target.value)}
+          onBlur={(e) => savePresencial(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") savePresencial((e.target as HTMLInputElement).value); }} />
+      </label>
       {byDay.size > 0 && (
         <details className="poll-hist">
           <summary>Histórico por dia ({byDay.size})</summary>
@@ -383,17 +395,21 @@ function EnquetesCard({ busy, run, lastEvent }: { busy: string | null; run: RunN
   );
 }
 
-function PollResultView({ p, compact }: { p: PollResult; compact?: boolean }) {
+function PollResultView({ p, compact, presencial = 0 }: { p: PollResult; compact?: boolean; presencial?: number }) {
   // Attendance-style poll: every option label is a number (how many people at
   // that location), so total attendance = Σ(label × votes).
   const numeric = p.options.length > 0 && p.options.every((o) => /^\d+$/.test(o.label.trim()));
-  const attendance = numeric ? p.options.reduce((s, o) => s + Number(o.label) * o.votes, 0) : null;
+  const zoomCount = numeric ? p.options.reduce((s, o) => s + Number(o.label) * o.votes, 0) : null;
+  // Quem estava na reunião e não respondeu conta como +1 cada.
+  const missing = p.totalParticipants === null ? 0 : Math.max(0, p.totalParticipants - p.totalVoted);
+  const attendance = zoomCount === null ? null : zoomCount + missing + presencial;
   return (
     <div className="pollres">
       <div className="pollres-head">
         <span className="pollres-name">{p.pollName}</span>
         <span className="muted small">{p.totalParticipants === null ? `${p.totalVoted} respostas` : `${p.totalVoted}/${p.totalParticipants} votaram`}</span>
       </div>
+      {p.totalParticipants !== null && <div className="small" style={{ color: missing ? "#b45309" : "#15803d" }}>{missing ? `Faltam ${missing} ${missing === 1 ? "resposta" : "respostas"} — contadas como +${missing}` : "Todos responderam"}</div>}
       {!compact && p.question && <div className="pollres-q muted small">{p.question}</div>}
       {attendance !== null &&
         (compact ? (
@@ -402,6 +418,7 @@ function PollResultView({ p, compact }: { p: PollResult; compact?: boolean }) {
           <div className="pollres-attend">
             <span className="pollres-attend-label">Assistência<br />total</span>
             <span className="pollres-attend-num">{attendance}</span>
+            <span className="muted small">Zoom {zoomCount} + ausentes {missing} + presencial {presencial}</span>
           </div>
         ))}
       <ul className="pollres-opts">
@@ -555,7 +572,8 @@ function RemoteQrCard() {
   return (
     <Card icon="📱" title="Controle remoto (celular)">
         <p className="small">{remote?.devices ?? 0} aparelhos conectados · acesso sem código</p>
-        <div className="remote-devices">{remote?.deviceList?.map(device=><div className="remote-device" key={device.id}><div><b>{device.label}</b><div className="small muted">Conectado em {new Date(device.createdAt).toLocaleString('pt-BR')}</div></div><button className="secondary small" onClick={async()=>{try{setRemoteError('');await api.remoteRevokeDevice(device.id);setRemote(await api.remoteStatus());}catch(e){setRemoteError(String(e));}}}>Revogar acesso</button></div>)}</div>
+        <div className="remote-devices">{remote?.deviceList?.map(device=><div className="remote-device" key={device.id}><div><b>{device.label}</b><div className="small muted">Conectado em {new Date(device.createdAt).toLocaleString('pt-BR')}</div><label className="small">Permissão <select value={device.access} onChange={async e=>{try{setRemoteError('');setRemote(await api.remoteSetDeviceAccess(device.id,e.target.value as DeviceAccess));}catch(err){setRemoteError(String(err));}}}><option value="readonly">Somente leitura</option><option value="main">Sala principal</option><option value="b">Sala B</option><option value="both">Ambas as salas</option></select></label></div><button className="secondary small" onClick={async()=>{try{setRemoteError('');await api.remoteRevokeDevice(device.id);setRemote(await api.remoteStatus());}catch(e){setRemoteError(String(e));}}}>Revogar acesso</button></div>)}</div>
+        <p className="small muted">Aparelhos novos entram como somente leitura. Libere a escrita de quem tem designação e, se quiser, limite por sala.</p>
         {!!remote?.devices && <button className="secondary small" onClick={async()=> {try {setRemoteError('');await api.remoteRevoke();setRemote(await api.remoteStatus());}catch(e){setRemoteError(String(e));}}}>Revogar todos ({remote.devices})</button>}
         {remoteError && <p className="err small">{remoteError}</p>}
       {url ? (

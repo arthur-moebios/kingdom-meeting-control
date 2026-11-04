@@ -91,7 +91,7 @@ it('one pairing controls both rooms and rejects cross-room IDs and invalid rooms
   try {
     const headers={host:'timers.example.test',origin:'https://timers.example.test'};
     const pair=await app.inject({method:'POST',url:'/remote-api/pair',headers,payload:{name:'Teste Sala B'}});
-    const cookie=String(pair.headers['set-cookie']).split(';')[0]!,authorized={...headers,cookie};
+    const cookie=String(pair.headers['set-cookie']).split(';')[0]!,authorized={...headers,cookie}; ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'both');
     const b=await app.inject({url:'/remote-api/state?room=b',headers:authorized});expect(b.statusCode).toBe(200);expect(b.json().room).toBe('b');
     const id=b.json().meeting.parts[0].id;
     expect((await app.inject({method:'POST',url:`/remote-api/part/${id}/start?room=main`,headers:authorized,payload:{}})).statusCode).toBe(400);
