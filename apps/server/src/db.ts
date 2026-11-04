@@ -97,6 +97,20 @@ export class Db {
       .run(key, value);
   }
 
+  /** Assistência presencial por data (YYYY-MM-DD), podada em ~90 dias. */
+  getPresencial(date: string): number {
+    try { const map = JSON.parse(this.getKv("attendance.presencial") || "{}") as Record<string, number>; return Number(map[date]) || 0; } catch { return 0; }
+  }
+
+  setPresencial(date: string, n: number): void {
+    let map: Record<string, number> = {};
+    try { map = JSON.parse(this.getKv("attendance.presencial") || "{}"); } catch { /* recomeça */ }
+    map[date] = n;
+    const cutoff = new Date(Date.now() - 90 * 24 * 3600_000).toISOString().slice(0, 10);
+    for (const k of Object.keys(map)) if (k < cutoff) delete map[k];
+    this.setKv("attendance.presencial", JSON.stringify(map));
+  }
+
   // -- settings --------------------------------------------------------------
 
   getSettings(): Settings {

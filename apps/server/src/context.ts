@@ -237,7 +237,8 @@ export class AppContext {
       pollName: raw.pollName,
       question: raw.question,
       totalVoted: raw.totalVoted,
-      totalParticipants: raw.totalParticipants,
+      // O Zoom nativo não informa o total; usa a contagem de participantes no momento da captura.
+      totalParticipants: raw.totalParticipants ?? (this.zoom.getStatus().participantCount || null),
       options: raw.options,
       capturedAt: now.toISOString(),
     };
