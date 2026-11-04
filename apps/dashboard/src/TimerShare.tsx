@@ -33,7 +33,9 @@ export async function programmeImage(state:RemoteTimerState,now:number):Promise<
     const minutes=part.allottedSec/60,duration=Number.isInteger(minutes)?`${minutes} min`:fmtClock(part.allottedSec);
     row(`${number}. ${part.title} (${duration})`,names,'22px Arial');
     const elapsed=elapsedSec(part,now);
-    row(elapsed>0?`Realizado: ${fmtClock(elapsed)}${part.running?' · em andamento':''}`:'Realizado: —','','18px Arial','#666');
+    const over=part.allottedSec>0 && elapsed>part.allottedSec,within=part.allottedSec>0 && elapsed>0 && !over;
+    const status=over?` (+${fmtClock(elapsed-part.allottedSec)} acima do tempo)`:within?' (dentro do tempo)':'';
+    row(elapsed>0?`Realizado: ${fmtClock(elapsed)}${status}${part.running?' · em andamento':''}`:'Realizado: —','',over||within?'bold 20px Arial':'18px Arial',over?'#b3261e':within?'#1f7a3d':'#666');
     y+=14;
   });
   canvas.width=width;canvas.height=Math.max(420,y+60);ctx.fillStyle='#fff';ctx.fillRect(0,0,width,canvas.height);ctx.textBaseline='top';
