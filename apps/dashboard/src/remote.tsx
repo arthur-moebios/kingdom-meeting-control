@@ -13,11 +13,19 @@ function RemoteTimer() {
   const [revision,setRevision]=useState(0);
   const [room,setRoom]=useState<TimerRoom>(()=>localStorage.getItem('kmc.timer-room')==='b'?'b':'main');
   const {state,connected,pairing,offset,unavailable}=useRemoteTimers(revision,room);
-  const commands=roomApi(room);
+  const api=roomApi(room);
   const [programme,setProgramme]=useState(false);
   const [deviceName,setDeviceName]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);
   const [install,setInstall]=useState<InstallPrompt|null>(null),[standalone,setStandalone]=useState(matchMedia('(display-mode: standalone)').matches);
   const meeting=state?.meeting,now=useClock(!!meeting?.parts.some(p=>p.running))+offset;
+  const canWrite=state?.canWrite!==false;
+  // Confirma só ações que alteram uma parte já iniciada (rodando ou com tempo decorrido); pausar nunca confirma.
+  const started=(p?:{running:boolean;baseElapsedSec:number})=>!!p && (p.running || p.baseElapsedSec>0);
+  const confirmThen=(cond:boolean,message:string,fn:()=>Promise<unknown>)=>cond && !window.confirm(message)?Promise.resolve():fn();
+  const commands={...api,
+    active:(id:string)=>confirmThen(id!==meeting?.activePartId && (!!meeting?.parts.some(p=>p.running) || started(meeting?.parts.find(p=>p.id===meeting.activePartId))),'Trocar a parte ativa? Há um cronômetro em andamento ou com tempo já registrado.',()=>api.active(id)),
+    start:(id:string)=>confirmThen(!!meeting?.parts.some(p=>p.running && p.id!==id),'Iniciar esta parte? Outra parte está em andamento e será pausada.',()=>api.start(id)),
+    reset:(id:string)=>confirmThen(started(meeting?.parts.find(p=>p.id===id)),'Zerar esta parte? O tempo já registrado será perdido.',()=>api.reset(id))};
   useEffect(()=> {
     const prompt=(event:Event)=> {event.preventDefault();setInstall(event as InstallPrompt);};
     const installed=()=> {setStandalone(true);setInstall(null);};
@@ -48,22 +56,23 @@ function RemoteTimer() {
       : !state ? <div className="rc-wait"><p>{!unavailable && navigator.onLine?'Conectando ao computador do Salão…':'Sem conexão. Conecte-se à internet para controlar os cronômetros.'}</p><button className="secondary" onClick={()=>setRevision(n=>n+1)}>Tentar novamente</button></div>
       : <>
         {!connected && <div className="rc-err" role="status">Sem conexão. Comandos desativados até reconectar.</div>}
-        <div className="rc-tools"><button className="secondary" disabled={!connected || busy} onClick={()=>setProgramme(true)}>Programação e nomes</button><ShareTimerImage key={room} state={state} now={now} disabled={!connected || busy} onError={setError} /></div>
+        {!canWrite && <div className="rc-err" role="status">Somente leitura — peça liberação ao operador.</div>}
+        <div className="rc-tools"><button className="secondary" disabled={!connected || busy || !canWrite} onClick={()=>setProgramme(true)}>Programação e nomes</button><ShareTimerImage key={room} state={state} now={now} disabled={!connected || busy} onError={setError} /></div>
         {room==='b' && <p className="small muted">Controle interno · dirigente e ajudante · independente do salão principal</p>}
         {(state.period?.weekLabel || meeting?.weekLabel) && <div className="rc-week"><b>{state.period?.weekLabel || meeting?.weekLabel}</b>{state.period?.dateLabel && <div>{meeting?.kind==='weekend'?'Fim de semana':'Meio de semana'} · {state.period.dateLabel}</div>}</div>}
         {state.period?.matchesMainWeek===false && <div className="rc-err" role="status">A Sala B está em outra semana. Se houver um cronômetro em execução, pause-o para carregar a semana do salão principal.</div>}
-        {active && <div className="rc-active"><ActivePart part={active} now={now} warnSeconds={state.warnSeconds} busy={busy || !connected} run={run} commands={commands} /></div>}
+        {active && <div className="rc-active"><ActivePart part={active} now={now} warnSeconds={state.warnSeconds} busy={busy || !connected || !canWrite} run={run} commands={commands} /></div>}
         <ul className="rc-list">{meeting?.parts.map(part=> {
           const elapsed=elapsedSec(part,now),remaining=part.allottedSec-elapsed;
           return <li key={part.id} className={`rc-row ${part.id===meeting.activePartId?'active':''}`}>
-            <button className="rc-rowmain" disabled={busy || !connected} onClick={()=>void run(()=>commands.active(part.id))}><span className="rc-sec">{part.section}</span><span className="rc-rowtitle">{part.title}</span><span className="small muted">{[state.details?.assignments[part.id]?.name,state.details?.assignments[part.id]?.secondName].filter(Boolean).join(' / ')}</span></button>
+            <button className="rc-rowmain" disabled={busy || !connected || !canWrite} onClick={()=>void run(()=>commands.active(part.id))}><span className="rc-sec">{part.section}</span><span className="rc-rowtitle">{part.title}</span><span className="small muted">{[state.details?.assignments[part.id]?.name,state.details?.assignments[part.id]?.secondName].filter(Boolean).join(' / ')}</span></button>
             <span className={`rc-rem ${remaining<0?'over':''}`}>{fmtClock(part.allottedSec>0?remaining:elapsed)}</span>
-            <button className={`rc-btn ${part.running?'pause':'play'}`} aria-label={part.running?'Pausar':'Iniciar'} disabled={busy || !connected} onClick={()=>void run(()=>part.running?commands.pause(part.id):commands.start(part.id))}>{part.running?'❚❚':'▶'}</button>
-            <button className="rc-btn reset" aria-label="Zerar" disabled={busy || !connected} onClick={()=>void run(()=>commands.reset(part.id))}>↺</button>
+            <button className={`rc-btn ${part.running?'pause':'play'}`} aria-label={part.running?'Pausar':'Iniciar'} disabled={busy || !connected || !canWrite} onClick={()=>void run(()=>part.running?commands.pause(part.id):commands.start(part.id))}>{part.running?'❚❚':'▶'}</button>
+            <button className="rc-btn reset" aria-label="Zerar" disabled={busy || !connected || !canWrite} onClick={()=>void run(()=>commands.reset(part.id))}>↺</button>
           </li>;
         })}</ul>
         {!meeting?.parts.length && <p className="rc-empty">{room==='b'?'Importe o PDF em “Programação e nomes”. Todas as datas serão preparadas automaticamente.':'O operador ainda não carregou a reunião.'}</p>}
-        {programme && connected && <RemoteProgrammePanel key={room} room={room} state={state} close={()=>setProgramme(false)} changed={()=>{}} />}
+        {programme && connected && canWrite && <RemoteProgrammePanel key={room} room={room} state={state} close={()=>setProgramme(false)} changed={()=>{}} />}
       </>}
   </div>;
 }
