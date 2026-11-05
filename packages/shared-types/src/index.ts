@@ -389,3 +389,10 @@ export const SystemInfoSchema = z.object({
   recentLogCount: z.number().int().nonnegative(),
 });
 export type SystemInfo = z.infer<typeof SystemInfoSchema>;
+
+/** Resultado da verificação de atualização (release pública pc-latest). */
+export interface UpdateStatus {
+  current: string; latest: string | null; available: boolean;
+  assetUrl: string | null; assetSize: number | null; checkedAt: string; error: string | null;
+}
+export interface AttendanceSummary { date: string; zoom: number | null; presencial: number; total: number; }

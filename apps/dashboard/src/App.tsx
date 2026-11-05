@@ -8,6 +8,7 @@ import { MeetingPanel } from "./MeetingPanel.js";
 import { NativeDashboard } from "./NativeDashboard.js";
 import { PanelDivider, remember, storedNumber } from "./PanelDivider.js";
 import { HostCameraSlot } from './HostCameraSlot.js';
+import { UpdateNotice } from './UpdateNotice.js';
 
 const STATE_LABEL: Record<string, string> = {
   STOPPED: "Parado",
@@ -116,6 +117,7 @@ function WebApp() {
             <button className="secondary small" onClick={() => { setCompactMode(!compactMode);remember('kmc.operator.compact',compactMode ? 0 : 1); }}>{compactMode ? 'Visão completa' : 'Visão compacta'}</button>
             <button className="secondary small" onClick={() => { setTimerWidth(50);setTimerHeight(70);setClockSize(48);remember('kmc.operator.timerWidth',50);remember('kmc.operator.timerHeight',70);remember('kmc.operator.clockSize',48); }}>Restaurar disposição</button>
           </div></details>}
+          <UpdateNotice />
           <HeaderStatus connected={connected} state={status?.state ?? null} />
           <Clock />
           <button className="iconbtn" title="Configurações" onClick={() => setShowSettings(true)}>⚙</button>

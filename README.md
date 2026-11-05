@@ -1,6 +1,6 @@
 # Kingdom Meeting Control
 
-**Windows 0.2.0 — Zoom nativo:** substitui o pacote anterior baseado no Chromium.
+**Windows 0.3.0 — Zoom nativo:** substitui o pacote anterior baseado no Chromium.
 Inclui integração com Zoom desktop/JW Library, câmera do anfitrião, painel
 redimensionável, cronômetros, anúncios, enquetes e início com Windows.
 O instalador e o ZIP da [release Windows](https://github.com/arthur-moebios/kingdom-meeting-control/releases/tag/pc-latest)

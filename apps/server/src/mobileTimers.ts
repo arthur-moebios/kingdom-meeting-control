@@ -6,6 +6,7 @@ import staticFiles from '@fastify/static';
 import type { WebSocket } from '@fastify/websocket';
 import type { DeviceAccess, RemoteTimerState, TimerRoom } from '@kmc/shared-types';
 import type { AppContext } from './context.js';
+import { zoomAttendance } from './attendance.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const ACCESS: readonly DeviceAccess[] = ['readonly','main','b','both'];
@@ -71,6 +72,23 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     const room=req.url.split('?')[0]!.startsWith('/remote-api/room-b/')?'b':roomOf(req);
     if(!service.canWrite(req,room))return reply.code(403).send({error:'read_only'});
   };
+  const writeAuth=async(req:FastifyRequest,reply:FastifyReply)=> {
+    if(!sameOrigin(req))return reply.code(403).send({error:'invalid_origin'});
+    const denied=await auth(req,reply);if(denied)return denied;
+    if(service.accessFor(req)==='readonly')return reply.code(403).send({error:'read_only'});
+  };
+  const today=()=> {const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+  const attendance=()=> {
+    const date=today(),zoom=zoomAttendance(ctx.db.pollResultsForDate(date)),presencial=ctx.db.getPresencial(date);
+    return {date,zoom,presencial,total:(zoom ?? 0)+presencial};
+  };
+  app.get('/remote-api/attendance',{preHandler:auth},async()=>attendance());
+  app.post('/remote-api/attendance',{preHandler:writeAuth,bodyLimit:1024},async(req,reply)=> {
+    const n=(req.body as {presencial?:unknown}|null)?.presencial;
+    if(typeof n!=='number' || !Number.isInteger(n) || n<0 || n>100000)return reply.code(400).send({error:'invalid_presencial'});
+    ctx.db.setPresencial(today(),n);ctx.db.audit('remote','attendance.presencial',{presencial:n});
+    return attendance();
+  });
   app.post('/remote-api/pair',{bodyLimit:1024},async(req,reply)=> {
     reply.header('Cache-Control','no-store');
     if(!sameOrigin(req))return reply.code(403).send({error:'invalid_origin'});

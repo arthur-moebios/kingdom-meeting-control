@@ -5,6 +5,7 @@ import { ActivePart } from './MeetingPanel.js';
 import { useClock, elapsedSec, fmtClock } from './timer.js';
 import { remoteApi, roomApi, useRemoteTimers } from './remoteApi.js';
 import { RemoteProgrammePanel } from './RemoteProgrammePanel.js';
+import { RemoteAttendance } from './RemoteAttendance.js';
 import { ShareTimerImage } from './TimerShare.js';
 import './styles.css';
 
@@ -58,6 +59,7 @@ function RemoteTimer() {
         {!connected && <div className="rc-err" role="status">Sem conexão. Comandos desativados até reconectar.</div>}
         {!canWrite && <div className="rc-err" role="status">Somente leitura — peça liberação ao operador.</div>}
         <div className="rc-tools"><button className="secondary" disabled={!connected || busy || !canWrite} onClick={()=>setProgramme(true)}>Programação e nomes</button><ShareTimerImage key={room} state={state} now={now} disabled={!connected || busy} onError={setError} /></div>
+        <RemoteAttendance connected={connected} canWrite={state.access!=='readonly'} onError={setError} />
         {room==='b' && <p className="small muted">Controle interno · dirigente e ajudante · independente do salão principal</p>}
         {(state.period?.weekLabel || meeting?.weekLabel) && <div className="rc-week"><b>{state.period?.weekLabel || meeting?.weekLabel}</b>{state.period?.dateLabel && <div>{meeting?.kind==='weekend'?'Fim de semana':'Meio de semana'} · {state.period.dateLabel}</div>}</div>}
         {state.period?.matchesMainWeek===false && <div className="rc-err" role="status">A Sala B está em outra semana. Se houver um cronômetro em execução, pause-o para carregar a semana do salão principal.</div>}

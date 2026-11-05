@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { RemoteTimerState, TimerRoom, TimerDetails, ImportedProgramme, ProgrammePart } from '@kmc/shared-types';
+import type { AttendanceSummary, RemoteTimerState, TimerRoom, TimerDetails, ImportedProgramme, ProgrammePart } from '@kmc/shared-types';
 export class PairingRequired extends Error {}
 async function request<T>(path: string, body?: unknown, timeout=8000): Promise<T> {
   const response=await fetch('/remote-api/'+path,{method:body===undefined?'GET':'POST',cache:'no-store',credentials:'same-origin',
@@ -25,6 +25,8 @@ export const roomApi=(room:TimerRoom)=> {
     pause:(id:string)=>request<RemoteTimerState>('part/'+encodeURIComponent(id)+'/pause'+query,{}),
     pauseNext:(id:string)=>request<RemoteTimerState>('part/'+encodeURIComponent(id)+'/pause-next'+query,{}),
     reset:(id:string)=>request<RemoteTimerState>('part/'+encodeURIComponent(id)+'/reset'+query,{}),
+    attendance:()=>request<AttendanceSummary>('attendance'),
+    setAttendance:(presencial:number)=>request<AttendanceSummary>('attendance',{presencial}),
     list:()=>request<ImportedProgramme[]>('programmes'),
     importPdf:(filename:string,data:string)=>request<ImportedProgramme[]>('programmes/import'+query,{filename,data},30000),
     load:(programmeId:string,includeNames:boolean,edits:ProgrammePart[])=>request<RemoteTimerState>('programmes/load'+query,{programmeId,includeNames,edits}),
