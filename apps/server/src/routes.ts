@@ -11,8 +11,9 @@ import { NotSupportedError } from "@kmc/zoom-web-adapter";
 import type { AppContext } from "./context.js";
 import { requireAdmin, requireViewer } from "./auth.js";
 import { isDeviceAccess } from "./mobileTimers.js";
+import { APP_VERSION, applyUpdate } from "./update.js";
 
-const VERSION = "0.3.0";
+const VERSION = APP_VERSION;
 
 /** Minimal recursive merge for partial settings updates. */
 function deepMerge<T>(base: T, patch: unknown): T {
@@ -333,6 +334,14 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.post("/api/v1/meeting/reset-all", admin, async () => ctx.meeting.resetAll());
 
   // -- settings --------------------------------------------------------------
+  app.get("/api/v1/update/status", viewer, async () => ctx.getUpdateStatus() ?? ctx.checkForUpdate());
+  app.post("/api/v1/update/check", admin, async () => ctx.checkForUpdate());
+  app.post("/api/v1/update/apply", admin, async (_req, reply) => {
+    const info = await ctx.checkForUpdate();
+    ctx.db.audit("admin", "update.apply", { from: info.current, to: info.latest });
+    try { return await applyUpdate(info); }
+    catch (err) { return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) }); }
+  });
   app.get("/api/v1/settings", viewer, async () => ctx.getSettings());
 
   const dateParam = (req: { params: unknown }) => { const d = (req.params as { date: string }).date; return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null; };

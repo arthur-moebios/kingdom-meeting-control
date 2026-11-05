@@ -14,6 +14,7 @@ import { CloudflareIntegration } from './cloudflare.js';
 import { MobileTimers } from './mobileTimers.js';
 import { MobileProgrammes } from './mobileProgrammes.js';
 import type { LogRingBuffer } from "./logger.js";
+import { APP_VERSION, checkLatest, type UpdateInfo } from './update.js';
 
 /**
  * Wires every service together and owns the shared, long-lived state. The
@@ -29,6 +30,7 @@ export class AppContext {
   readonly mobile: MobileTimers;
   readonly programmes: MobileProgrammes;
   mobileGatewayReady = false;
+  private lastUpdate: UpdateInfo | null = null;
   /** Set by index.ts; lets an API call trigger a graceful shutdown. */
   onShutdownRequest: ((reason: string) => void) | null = null;
   private settings: Settings;
@@ -83,6 +85,16 @@ export class AppContext {
     this.cloudflare = new CloudflareIntegration(repoRoot,cfg.dataDir);
     this.programmes = new MobileProgrammes(this);
     this.mobile = new MobileTimers(this);
+  }
+
+  getUpdateStatus(): UpdateInfo | null {
+    return this.lastUpdate;
+  }
+
+  async checkForUpdate(): Promise<UpdateInfo> {
+    this.lastUpdate = await checkLatest(APP_VERSION);
+    if (this.lastUpdate.error) this.logger.warn({ error: this.lastUpdate.error }, "Update check failed");
+    return this.lastUpdate;
   }
 
   getSettings(): Settings {
@@ -203,6 +215,10 @@ export class AppContext {
         this.logger.error({ err: String(err) }, "auto-join failed"),
       );
     }
+
+    // Verifica atualização na release pública ao iniciar e a cada 6h.
+    void this.checkForUpdate();
+    setInterval(() => void this.checkForUpdate(), 6 * 3600_000).unref();
 
     // Retention pruning every 6h.
     setInterval(() => {
