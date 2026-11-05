@@ -8,8 +8,9 @@ import { buildApp } from "./app.js";
 import { DiscoveryService } from "./discovery.js";
 import { BeaconService } from "./beacon.js";
 import { buildRemoteGateway } from './mobileTimers.js';
+import { APP_VERSION } from './update.js';
 
-const VERSION = "0.1.0";
+const VERSION = APP_VERSION;
 
 /** Load .env (repo root) into process.env if present — no extra dependency. */
 function loadEnvFile(): void {
