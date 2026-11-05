@@ -12,7 +12,7 @@ import type { AppContext } from "./context.js";
 import { requireAdmin, requireViewer } from "./auth.js";
 import { isDeviceAccess } from "./mobileTimers.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
 /** Minimal recursive merge for partial settings updates. */
 function deepMerge<T>(base: T, patch: unknown): T {
