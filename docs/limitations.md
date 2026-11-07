@@ -85,6 +85,33 @@ Legend: ✅ works · 🟡 implemented but **needs live validation** · 🔬 expe
 - Bound to loopback / local network only by default. ✅
 - No public exposure by default. ✅
 
+## Assistência: tempo real e push para o Mapas JW (2026-11-07)
+Integração **opcional e privada**: sem configuração o push fica inativo e nenhuma
+requisição de rede é feita (um clone limpo deste repositório não fala com ninguém).
+- Evento `attendance.changed`, assistência de HOJE no `Snapshot` (`attendance`),
+  `GET /api/v1/attendance/today` e `:date` completo. ✅ cobertos por testes
+  automatizados (Fastify `inject`, SQLite real em memória); 🟡 **não** exibidos
+  ainda em tablet real — o consumo no tablet é outra tarefa.
+- Outbox SQLite (`attendance_outbox`), worker com backoff 5 s → 5 min, timeout de
+  10 s, 401/422/outros 4xx como erro permanente. 🟡 **NÃO validado contra um
+  backend Laravel real**: o contrato (`POST /api/kmc/assistencia`) foi testado só
+  com `fetch` simulado. Códigos HTTP, corpo de resposta e `Retry-After` reais
+  ainda precisam ser observados ponta a ponta.
+- Token e URL vêm do store local (`kv` `mapasjw.config`, gravado pelo pareamento)
+  ou, como fallback, de `KMC_MAPASJW_URL`/`KMC_MAPASJW_TOKEN`/`KMC_MAPASJW_INSTANCE`.
+  O fluxo de pareamento em si ainda **não existe** neste repositório. ⛔ O token do
+  store fica em texto no SQLite local (mesmo nível de proteção do disco do PC).
+- `tipo` (`meio_semana`/`fim_de_semana`/`outra`) vem de `meeting.kind`, validado
+  contra a semana ISO e o dia da semana; reunião não carregada ou em conflito vira
+  `outra`. 🟡 Heurística; depende de a reunião da semana estar carregada no KMC.
+- Com `authEnabled=false` (sem `KMC_ADMIN_TOKEN`/`KMC_VIEWER_TOKEN`) qualquer
+  aparelho da rede local é admin e vê a assistência no snapshot; o servidor emite
+  `system.warning` na partida, mas o comportamento padrão **não** foi alterado.
+- O presencial por data é podado em ~90 dias (`Db.setPresencial`); o outbox é
+  independente e guarda 30 dias de histórico de envios.
+- Os testes do servidor com SQLite exigem Node 22+ (`node:sqlite`) e usam um shim
+  de alias no `vitest.config.ts`, porque o Vite 5 não resolve `node:sqlite`.
+
 ## Windows startup
 - Task Scheduler "at logon" agent + watchdog. 🟡 script provided
   (`scripts/install-windows.ps1`), validate on the target PC.

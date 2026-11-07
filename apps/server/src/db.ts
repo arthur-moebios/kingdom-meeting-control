@@ -15,6 +15,19 @@ import {
  * Stores: settings (single JSON row), operational events, and a command audit.
  * Participant personal data is NOT persisted beyond transient event payloads.
  */
+export interface OutboxRow {
+  id: number;
+  date: string;
+  tipo: string;
+  payload: string;
+  status: "pending" | "sent" | "failed";
+  attempts: number;
+  nextAttemptAt: string;
+  lastError: string | null;
+  createdAt: string;
+  sentAt: string | null;
+}
+
 export class Db {
   private db: DatabaseSync;
 
@@ -53,6 +66,19 @@ export class Db {
         PRIMARY KEY (date, pollName)
       );
       CREATE INDEX IF NOT EXISTS idx_poll_results_date ON poll_results(date);
+      CREATE TABLE IF NOT EXISTS attendance_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        nextAttemptAt TEXT NOT NULL,
+        lastError TEXT,
+        createdAt TEXT NOT NULL,
+        sentAt TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_attendance_outbox_status ON attendance_outbox(status, nextAttemptAt);
     `);
   }
 
@@ -97,9 +123,21 @@ export class Db {
       .run(key, value);
   }
 
+  deleteKv(key: string): void {
+    this.db.prepare("DELETE FROM kv WHERE k = ?").run(key);
+  }
+
   /** Assistência presencial por data (YYYY-MM-DD), podada em ~90 dias. */
   getPresencial(date: string): number {
     try { const map = JSON.parse(this.getKv("attendance.presencial") || "{}") as Record<string, number>; return Number(map[date]) || 0; } catch { return 0; }
+  }
+
+  /** Como getPresencial, mas null quando nenhum valor foi registrado para a data. */
+  getPresencialOrNull(date: string): number | null {
+    try {
+      const map = JSON.parse(this.getKv("attendance.presencial") || "{}") as Record<string, number>;
+      return typeof map[date] === "number" ? map[date]! : null;
+    } catch { return null; }
   }
 
   setPresencial(date: string, n: number): void {
@@ -109,6 +147,73 @@ export class Db {
     const cutoff = new Date(Date.now() - 90 * 24 * 3600_000).toISOString().slice(0, 10);
     for (const k of Object.keys(map)) if (k < cutoff) delete map[k];
     this.setKv("attendance.presencial", JSON.stringify(map));
+  }
+
+  // -- outbox da assistência (push para o Mapas JW) --------------------------
+
+  /** Enfileira; envios PENDENTES do mesmo (date,tipo) são substituídos — o último valor vence. */
+  outboxEnqueue(date: string, tipo: string, payload: string, nowIso: string): number {
+    this.db.prepare("DELETE FROM attendance_outbox WHERE date = ? AND tipo = ? AND status = 'pending'").run(date, tipo);
+    const info = this.db
+      .prepare("INSERT INTO attendance_outbox (date, tipo, payload, nextAttemptAt, createdAt) VALUES (?, ?, ?, ?, ?)")
+      .run(date, tipo, payload, nowIso, nowIso);
+    return Number(info.lastInsertRowid);
+  }
+
+  outboxNextDue(nowIso: string): OutboxRow | null {
+    return (this.db
+      .prepare("SELECT * FROM attendance_outbox WHERE status = 'pending' AND nextAttemptAt <= ? ORDER BY id LIMIT 1")
+      .get(nowIso) as OutboxRow | undefined) ?? null;
+  }
+
+  /** Próximo instante em que há algo a enviar (null se a fila está vazia). */
+  outboxEarliestPending(): string | null {
+    const row = this.db
+      .prepare("SELECT MIN(nextAttemptAt) AS t FROM attendance_outbox WHERE status = 'pending'")
+      .get() as { t: string | null };
+    return row.t ?? null;
+  }
+
+  outboxMarkSent(id: number, nowIso: string): void {
+    this.db.prepare("UPDATE attendance_outbox SET status = 'sent', sentAt = ?, lastError = NULL WHERE id = ? AND status = 'pending'").run(nowIso, id);
+  }
+
+  outboxMarkRetry(id: number, attempts: number, nextIso: string, error: string): void {
+    this.db.prepare("UPDATE attendance_outbox SET attempts = ?, nextAttemptAt = ?, lastError = ? WHERE id = ? AND status = 'pending'").run(attempts, nextIso, error, id);
+  }
+
+  outboxMarkFailed(id: number, attempts: number, error: string): void {
+    this.db.prepare("UPDATE attendance_outbox SET status = 'failed', attempts = ?, lastError = ? WHERE id = ? AND status = 'pending'").run(attempts, error, id);
+  }
+
+  outboxCounts(): { pending: number; failed: number } {
+    const rows = this.db
+      .prepare("SELECT status, COUNT(*) AS n FROM attendance_outbox WHERE status IN ('pending','failed') GROUP BY status")
+      .all() as { status: string; n: number }[];
+    const n = (s: string) => Number(rows.find((r) => r.status === s)?.n ?? 0);
+    return { pending: n("pending"), failed: n("failed") };
+  }
+
+  outboxLastSentAt(): string | null {
+    const row = this.db.prepare("SELECT MAX(sentAt) AS t FROM attendance_outbox").get() as { t: string | null };
+    return row.t ?? null;
+  }
+
+  outboxList(limit = 50): OutboxRow[] {
+    return this.db.prepare("SELECT * FROM attendance_outbox ORDER BY id DESC LIMIT ?").all(limit) as unknown as OutboxRow[];
+  }
+
+  /** Último item enfileirado para a data (qualquer status), para dedupe de mudanças. */
+  outboxLatestForDate(date: string): OutboxRow | null {
+    return (this.db
+      .prepare("SELECT * FROM attendance_outbox WHERE date = ? ORDER BY id DESC LIMIT 1")
+      .get(date) as OutboxRow | undefined) ?? null;
+  }
+
+  /** Remove enviados/falhos antigos (os pendentes nunca são podados aqui). */
+  outboxPrune(olderThanIso: string): number {
+    const info = this.db.prepare("DELETE FROM attendance_outbox WHERE status != 'pending' AND createdAt < ?").run(olderThanIso);
+    return Number(info.changes);
   }
 
   // -- settings --------------------------------------------------------------

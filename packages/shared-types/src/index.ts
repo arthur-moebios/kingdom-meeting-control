@@ -327,6 +327,7 @@ export const EventTypeSchema = z.enum([
   "zoom.poll.launched",
   "zoom.host.reclaimed",
   "poll.results.captured",
+  "attendance.changed",
   "presentation.started",
   "presentation.ended",
   "meeting.loaded",
@@ -348,6 +349,14 @@ export type DomainEvent = z.infer<typeof DomainEventSchema>;
 // ---------------------------------------------------------------------------
 // WebSocket frames (server → client)
 // ---------------------------------------------------------------------------
+/** Assistência consolidada de um dia (presencial + Zoom). */
+export const AttendanceSummarySchema = z.object({
+  date: z.string(),
+  zoom: z.number().nullable(),
+  presencial: z.number(),
+  total: z.number(),
+});
+
 export const SnapshotSchema = z.object({
   status: ZoomStatusSchema,
   participants: z.array(ZoomParticipantSchema),
@@ -358,6 +367,8 @@ export const SnapshotSchema = z.object({
   meeting: MeetingScheduleSchema,
   meetingNames: z.record(z.object({name:z.string(),secondName:z.string()})).optional(),
   settings: SettingsSchema,
+  /** Assistência de HOJE; null quando nada foi registrado no dia (nem presencial, nem Zoom). */
+  attendance: AttendanceSummarySchema.nullable().optional(),
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 
@@ -395,4 +406,4 @@ export interface UpdateStatus {
   current: string; latest: string | null; available: boolean;
   assetUrl: string | null; assetSize: number | null; checkedAt: string; error: string | null;
 }
-export interface AttendanceSummary { date: string; zoom: number | null; presencial: number; total: number; }
+export type AttendanceSummary = z.infer<typeof AttendanceSummarySchema>;

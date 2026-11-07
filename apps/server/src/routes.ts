@@ -345,16 +345,19 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get("/api/v1/settings", viewer, async () => ctx.getSettings());
 
   const dateParam = (req: { params: unknown }) => { const d = (req.params as { date: string }).date; return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null; };
+  // Rotas estáticas (today, sync) têm prioridade sobre :date no roteador.
+  app.get("/api/v1/attendance/today", viewer, async () => ctx.todayAttendance());
+  // Estado do push para o Mapas JW (admin: traz erros e contagens; nunca URL nem token).
+  app.get("/api/v1/attendance/sync", admin, async () => ctx.attendanceSync.status());
   app.get("/api/v1/attendance/:date", viewer, async (req, reply) => {
     const date = dateParam(req); if (!date) return reply.code(400).send({ error: "invalid_date" });
-    return { date, presencial: ctx.db.getPresencial(date) };
+    return ctx.attendanceFor(date);
   });
   app.put("/api/v1/attendance/:date", admin, async (req, reply) => {
     const date = dateParam(req), n = (req.body as { presencial?: unknown } | null)?.presencial;
     if (!date) return reply.code(400).send({ error: "invalid_date" });
     if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 100000) return reply.code(400).send({ error: "invalid_presencial" });
-    ctx.db.setPresencial(date, n); ctx.db.audit("admin", "attendance.presencial", { date, presencial: n });
-    return { date, presencial: n };
+    return ctx.recordPresencial(date, n, "admin");
   });
   app.post('/api/v1/mobile-programmes/import',{...remoteAdmin,bodyLimit:11_000_000},async(req)=> {
     const body=req.body as {filename?:unknown;data?:unknown};return ctx.programmes.importPdf(body?.filename,body?.data);

@@ -6,6 +6,7 @@ const r = (p: string) => path.resolve(import.meta.dirname, p);
 export default defineConfig({
   resolve: {
     alias: {
+      "node:sqlite": r("vitest.node-sqlite-shim.ts"),
       "@kmc/shared-types": r("packages/shared-types/src/index.ts"),
       "@kmc/config": r("packages/config/src/index.ts"),
       "@kmc/zoom-web-adapter": r("packages/zoom-web-adapter/src/index.ts"),

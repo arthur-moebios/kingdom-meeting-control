@@ -36,10 +36,16 @@ async function main(): Promise<void> {
     "Kingdom Meeting Control server starting",
   );
   if (!cfg.authEnabled) {
-    logger.info({}, "Auth disabled (local mode) — no token required. Set KMC_ADMIN_TOKEN + KMC_VIEWER_TOKEN to enable.");
+    logger.warn({}, "Auth disabled (local mode) — no token required, every LAN client is admin. Set KMC_ADMIN_TOKEN + KMC_VIEWER_TOKEN to enable.");
   }
 
   const ctx = new AppContext(cfg, logger, ring);
+  if (!cfg.authEnabled) {
+    ctx.bus.publish("system.warning", {
+      scope: "auth",
+      message: "Autenticação desativada: qualquer aparelho na rede local tem acesso de administrador (inclusive à assistência). Defina KMC_ADMIN_TOKEN e KMC_VIEWER_TOKEN.",
+    });
+  }
   const app = await buildApp(ctx);
 
   await app.listen({ host: cfg.host, port: cfg.port });

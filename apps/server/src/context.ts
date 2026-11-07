@@ -7,7 +7,7 @@ import { ZoomAutomationService } from "@kmc/zoom-automation";
 import { NativeZoomService } from './nativeZoom.js';
 import { PresentationMonitorService } from "@kmc/presentation-monitor";
 import { MeetingService } from "@kmc/meeting";
-import type { PollResult, Settings, Snapshot } from "@kmc/shared-types";
+import type { AttendanceSummary, PollResult, Settings, Snapshot } from "@kmc/shared-types";
 import { Db } from "./db.js";
 import { EventBus } from "./eventBus.js";
 import { CloudflareIntegration } from './cloudflare.js';
@@ -15,6 +15,8 @@ import { MobileTimers } from './mobileTimers.js';
 import { MobileProgrammes } from './mobileProgrammes.js';
 import type { LogRingBuffer } from "./logger.js";
 import { APP_VERSION, checkLatest, type UpdateInfo } from './update.js';
+import { consolidateAttendance, localDate, zoomAttendance } from './attendance.js';
+import { AttendanceSync } from './attendanceSync.js';
 
 /**
  * Wires every service together and owns the shared, long-lived state. The
@@ -29,6 +31,8 @@ export class AppContext {
   readonly cloudflare: CloudflareIntegration;
   readonly mobile: MobileTimers;
   readonly programmes: MobileProgrammes;
+  /** Push opcional da assistência para o Mapas JW (inativo sem configuração). */
+  readonly attendanceSync: AttendanceSync;
   mobileGatewayReady = false;
   private lastUpdate: UpdateInfo | null = null;
   /** Set by index.ts; lets an API call trigger a graceful shutdown. */
@@ -45,6 +49,17 @@ export class AppContext {
 
     // Persist every event + prune on a schedule.
     this.bus.subscribe((ev) => this.db.appendEvent(ev));
+
+    this.attendanceSync = new AttendanceSync({
+      db: this.db,
+      logger,
+      getMeeting: () => this.meeting.getState(),
+      appVersion: APP_VERSION,
+    });
+    // Cada mudança real da assistência vira (no máximo) um item colapsado no outbox.
+    this.bus.subscribe((ev) => {
+      if (ev.type === "attendance.changed" && typeof ev.data.date === "string") this.attendanceSync.enqueue(ev.data.date);
+    });
 
     this.presentation = new PresentationMonitorService(logger, (status) => {
       this.bus.publish(
@@ -171,7 +186,32 @@ export class AppContext {
     });
   }
 
+  /** Assistência consolidada (presencial + Zoom) de uma data — fonte única da regra. */
+  attendanceFor(date: string): AttendanceSummary {
+    return consolidateAttendance(this.db, date);
+  }
+
+  todayAttendance(): AttendanceSummary {
+    return this.attendanceFor(localDate());
+  }
+
+  /** Único ponto de escrita do presencial (rota admin e PWA): grava, audita e avisa se mudou. */
+  recordPresencial(date: string, n: number, actor: string): AttendanceSummary {
+    const before = this.db.getPresencialOrNull(date);
+    this.db.setPresencial(date, n);
+    this.db.audit(actor, "attendance.presencial", actor === "admin" ? { date, presencial: n } : { presencial: n });
+    if (before !== n) this.publishAttendanceChanged(date);
+    return this.attendanceFor(date);
+  }
+
+  private publishAttendanceChanged(date: string): void {
+    const a = this.attendanceFor(date);
+    this.bus.publish("attendance.changed", { date: a.date, presencial: a.presencial, zoom: a.zoom, total: a.total });
+  }
+
   getSnapshot(): Snapshot {
+    const today = this.todayAttendance();
+    const recorded = today.zoom !== null || this.db.getPresencialOrNull(today.date) !== null;
     return {
       status: this.zoom.getStatus(),
       participants: this.zoom.listParticipants(),
@@ -182,11 +222,14 @@ export class AppContext {
       meeting: this.meeting.getState(),
       meetingNames: this.programmes.mainAssignments(),
       settings: this.settings,
+      attendance: recorded ? today : null,
     };
   }
 
   /** Startup side-effects: begin monitoring, launch browser, optional auto-join. */
   async bootstrap(): Promise<void> {
+    this.attendanceSync.start();
+
     // Presentation monitor (Windows only; no-op elsewhere).
     this.presentation.start(this.settings.share.projectorDisplayId);
 
@@ -258,12 +301,16 @@ export class AppContext {
       options: raw.options,
       capturedAt: now.toISOString(),
     };
+    const zoomBefore = zoomAttendance(this.db.pollResultsForDate(date));
     this.db.upsertPollResult(result);
+    // Auto-captura roda a cada 30 s: só há evento quando o número do Zoom realmente muda.
+    if (zoomAttendance(this.db.pollResultsForDate(date)) !== zoomBefore) this.publishAttendanceChanged(date);
     this.bus.publish("poll.results.captured", { date, pollName: raw.pollName, totalVoted: raw.totalVoted });
     return result;
   }
 
   async shutdown(): Promise<void> {
+    this.attendanceSync.stop();
     this.cloudflare.close();
     this.presentation.stop();
     await this.zoom.shutdown();
