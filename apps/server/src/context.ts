@@ -17,6 +17,7 @@ import type { LogRingBuffer } from "./logger.js";
 import { APP_VERSION, checkLatest, type UpdateInfo } from './update.js';
 import { consolidateAttendance, localDate, zoomAttendance } from './attendance.js';
 import { AttendanceSync } from './attendanceSync.js';
+import { MapasJwPairing } from './mapasjwPairing.js';
 
 /**
  * Wires every service together and owns the shared, long-lived state. The
@@ -33,6 +34,8 @@ export class AppContext {
   readonly programmes: MobileProgrammes;
   /** Push opcional da assistência para o Mapas JW (inativo sem configuração). */
   readonly attendanceSync: AttendanceSync;
+  /** Pareamento opcional com o Mapas JW (sem solicitação pendente não faz rede). */
+  readonly mapasjwPairing: MapasJwPairing;
   mobileGatewayReady = false;
   private lastUpdate: UpdateInfo | null = null;
   /** Set by index.ts; lets an API call trigger a graceful shutdown. */
@@ -55,6 +58,13 @@ export class AppContext {
       logger,
       getMeeting: () => this.meeting.getState(),
       appVersion: APP_VERSION,
+    });
+    this.mapasjwPairing = new MapasJwPairing({
+      db: this.db,
+      logger,
+      appVersion: APP_VERSION,
+      // O item que levou 401 não é reenviado sozinho: manda o estado atual de hoje.
+      onPaired: () => { this.attendanceSync.enqueue(localDate()); },
     });
     // Cada mudança real da assistência vira (no máximo) um item colapsado no outbox.
     this.bus.subscribe((ev) => {
@@ -229,6 +239,7 @@ export class AppContext {
   /** Startup side-effects: begin monitoring, launch browser, optional auto-join. */
   async bootstrap(): Promise<void> {
     this.attendanceSync.start();
+    this.mapasjwPairing.start();
 
     // Presentation monitor (Windows only; no-op elsewhere).
     this.presentation.start(this.settings.share.projectorDisplayId);
@@ -311,6 +322,7 @@ export class AppContext {
 
   async shutdown(): Promise<void> {
     this.attendanceSync.stop();
+    this.mapasjwPairing.stop();
     this.cloudflare.close();
     this.presentation.stop();
     await this.zoom.shutdown();

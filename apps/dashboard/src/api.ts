@@ -34,7 +34,22 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 import type { DeviceAccess, MeetingKind, MeetingSchedule, PollResult, Settings, SettingsUpdate, RemoteIntegrationStatus, UpdateStatus } from "@kmc/shared-types";
 
+export interface MapasJwPairStatus {
+  estado: 'nenhum' | 'pendente' | 'expirada' | 'recusada' | 'perdida' | 'erro';
+  codigo?: string | null; expiraEm?: string; nome?: string; slug?: string; mensagem?: string | null; erroTransitorio?: string | null;
+}
+export interface MapasJwSyncStatus {
+  enabled: boolean; state: 'disabled' | 'connected' | 'disconnected'; source: 'store' | 'env' | null; instancia: string | null;
+  pending: number; failed: number; lastAttemptAt: string | null; lastSuccessAt: string | null; nextAttemptAt: string | null;
+  lastError: { message: string; at: string; permanent: boolean; httpStatus: number | null } | null;
+}
+
 export const api = {
+  mapasjwSync:()=>req<MapasJwSyncStatus>('GET','/attendance/sync'),
+  mapasjwPairStatus:()=>req<MapasJwPairStatus>('GET','/mapasjw/pair'),
+  mapasjwPair:(baseUrl:string,nome:string,slug:string)=>req<{solicitacaoId:number;codigo:string;expiraEm:string}>('POST','/mapasjw/pair',{baseUrl,nome,slug}),
+  mapasjwPairCancel:()=>req<MapasJwPairStatus>('POST','/mapasjw/pair/cancel',{}),
+  mapasjwDisconnect:()=>req<MapasJwSyncStatus>('POST','/mapasjw/disconnect',{}),
   updateStatus:()=>req<UpdateStatus>('GET','/update/status'),
   updateCheck:()=>req<UpdateStatus>('POST','/update/check',{}),
   updateApply:()=>req<{started:boolean}>('POST','/update/apply',{}),

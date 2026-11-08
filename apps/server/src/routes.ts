@@ -12,6 +12,7 @@ import type { AppContext } from "./context.js";
 import { requireAdmin, requireViewer } from "./auth.js";
 import { isDeviceAccess } from "./mobileTimers.js";
 import { APP_VERSION, applyUpdate } from "./update.js";
+import { PairingError } from "./mapasjwPairing.js";
 
 const VERSION = APP_VERSION;
 
@@ -349,6 +350,30 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get("/api/v1/attendance/today", viewer, async () => ctx.todayAttendance());
   // Estado do push para o Mapas JW (admin: traz erros e contagens; nunca URL nem token).
   app.get("/api/v1/attendance/sync", admin, async () => ctx.attendanceSync.status());
+  // Pareamento com o Mapas JW (admin; escrita exige Origin == Host). Nunca devolve token, segredo nem URL.
+  app.post("/api/v1/mapasjw/pair", remoteAdmin, async (req, reply) => {
+    const b = (req.body ?? {}) as { baseUrl?: unknown; nome?: unknown; slug?: unknown };
+    try {
+      const r = await ctx.mapasjwPairing.solicitar(b.baseUrl, b.nome, b.slug);
+      ctx.db.audit("admin", "mapasjw.pair.request", { solicitacaoId: r.solicitacaoId });
+      return r;
+    } catch (err) {
+      if (!(err instanceof PairingError)) throw err;
+      const http = { invalid_input: 400, pending_exists: 409, congregation_unavailable: 422, rate_limited: 429, upstream: 502 }[err.code];
+      return reply.code(http).send({ error: err.code, message: err.message });
+    }
+  });
+  app.get("/api/v1/mapasjw/pair", admin, async () => ctx.mapasjwPairing.status());
+  app.post("/api/v1/mapasjw/pair/cancel", remoteAdmin, async () => {
+    ctx.mapasjwPairing.cancelar();
+    ctx.db.audit("admin", "mapasjw.pair.cancel", {});
+    return ctx.mapasjwPairing.status();
+  });
+  app.post("/api/v1/mapasjw/disconnect", remoteAdmin, async () => {
+    ctx.mapasjwPairing.desconectar();
+    ctx.db.audit("admin", "mapasjw.disconnect", {});
+    return ctx.attendanceSync.status();
+  });
   app.get("/api/v1/attendance/:date", viewer, async (req, reply) => {
     const date = dateParam(req); if (!date) return reply.code(400).send({ error: "invalid_date" });
     return ctx.attendanceFor(date);

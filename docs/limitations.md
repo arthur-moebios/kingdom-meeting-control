@@ -99,8 +99,28 @@ requisição de rede é feita (um clone limpo deste repositório não fala com n
   ainda precisam ser observados ponta a ponta.
 - Token e URL vêm do store local (`kv` `mapasjw.config`, gravado pelo pareamento)
   ou, como fallback, de `KMC_MAPASJW_URL`/`KMC_MAPASJW_TOKEN`/`KMC_MAPASJW_INSTANCE`.
-  O fluxo de pareamento em si ainda **não existe** neste repositório. ⛔ O token do
-  store fica em texto no SQLite local (mesmo nível de proteção do disco do PC).
+  ⛔ O token do store fica em texto no SQLite local (mesmo nível de proteção do disco do PC).
+- **Pareamento (implementado, NÃO validado ao vivo).** Painel "Mapas JW" em Configurações:
+  o KMC pede (`POST <base>/api/kmc/instancias/solicitar`), mostra o CÓDIGO, um gestor
+  aprova no Mapas JW conferindo o código, e o KMC consulta a cada 5 s (backoff até 30 s
+  em erro de rede) até receber o token, que é gravado em `mapasjw.config` antes de
+  qualquer outra coisa (o servidor só o entrega uma vez). Rotas admin:
+  `POST/GET /api/v1/mapasjw/pair`, `POST .../pair/cancel`, `POST /api/v1/mapasjw/disconnect`
+  (as de escrita exigem Origin == Host). Chaves do kv: `mapasjw.pairing` (solicitação,
+  com o segredo só enquanto pendente), `mapasjw.config`, `mapasjw.authFailed`.
+  🟡 Coberto só por testes com `fetch` simulado e pelo contrato descrito pelo outro
+  lado; **o fluxo contra um Mapas JW real nunca foi exercitado a partir desta UI**, nem
+  a tela em navegador (só typecheck e build do dashboard). Hipóteses não confirmadas:
+  404/410 na consulta tratados como "expirada"; outros 4xx como erro final; 5xx, 429 e
+  falha de rede como transitórios; "aprovada" sem token tratada como token perdido (o
+  pareamento tem de ser refeito, revogando a aprovação antiga no Mapas JW). Vencida a
+  `expira_em` (30 min) o KMC para de consultar sem uma última tentativa.
+  Desconectar apaga só a cópia local: a aprovação continua existindo no Mapas JW até um
+  gestor revogá-la lá. Se a conexão vier de `KMC_MAPASJW_*`, Desconectar não a remove
+  (o painel avisa); o que foi pareado pelo painel tem prioridade sobre o ambiente.
+  Itens já na fila de saída não são apagados ao desconectar: seguem pendentes (e
+  expiram em 3 dias) caso a instalação seja pareada de novo. Depois de parear, o KMC
+  enfileira a assistência de hoje, pois o item que levou 401 não é reenviado.
 - `tipo` (`meio_semana`/`fim_de_semana`/`outra`) vem de `meeting.kind`, validado
   contra a semana ISO e o dia da semana; reunião não carregada ou em conflito vira
   `outra`. 🟡 Heurística; depende de a reunião da semana estar carregada no KMC.

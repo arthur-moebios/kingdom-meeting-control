@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Display, Settings } from "@kmc/shared-types";
 import { api } from "./api.js";
 import { CloudflarePanel } from './CloudflarePanel.js';
+import { MapasJwPanel } from './MapasJwPanel.js';
 
 interface Props {
   native?: boolean;
@@ -83,6 +84,7 @@ export function SettingsPanel({ displays, onClose, onSaved, native = false }: Pr
     <Overlay onClose={onClose} title="Configurações">
       <div className="settings">
         <CloudflarePanel />
+        <MapasJwPanel />
         <fieldset>
           <legend>Reunião</legend>
           <Field label="ID da reunião">
