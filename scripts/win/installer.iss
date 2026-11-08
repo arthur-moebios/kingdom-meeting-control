@@ -17,7 +17,7 @@
   #define OutDir "."
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.4.0"
 #endif
 #define AppName "Kingdom Meeting Control"
 #define AppExe "KingdomMeetingControl.exe"

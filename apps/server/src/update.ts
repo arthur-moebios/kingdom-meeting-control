@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import type { UpdateStatus } from '@kmc/shared-types';
 
 /** Versão corrente do app (única fonte; routes.ts e context.ts a importam). */
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
 export const UPDATE_REPO = process.env.KMC_UPDATE_REPO || 'arthur-moebios/kingdom-meeting-control';
 const ASSET_NAME = 'KingdomMeetingControl-setup.exe';
 
