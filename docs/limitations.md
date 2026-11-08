@@ -113,7 +113,8 @@ requisição de rede é feita (um clone limpo deste repositório não fala com n
   a tela em navegador (só typecheck e build do dashboard). Hipóteses não confirmadas:
   404/410 na consulta tratados como "expirada"; outros 4xx como erro final; 5xx, 429 e
   falha de rede como transitórios; "aprovada" sem token tratada como token perdido (o
-  pareamento tem de ser refeito, revogando a aprovação antiga no Mapas JW).   Desconectar apaga só a cópia local: a aprovação continua existindo no Mapas JW até um
+  pareamento tem de ser refeito, revogando a aprovação antiga no Mapas JW).
+  Desconectar apaga só a cópia local: a aprovação continua existindo no Mapas JW até um
   gestor revogá-la lá. Se a conexão vier de `KMC_MAPASJW_*`, Desconectar não a remove
   (o painel avisa); o que foi pareado pelo painel tem prioridade sobre o ambiente.
   Fila de saída e troca de congregação: Desconectar descarta os envios pendentes (a
