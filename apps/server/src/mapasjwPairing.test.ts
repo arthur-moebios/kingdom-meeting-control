@@ -23,6 +23,15 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 const solicitada = (extra: Record<string, unknown> = {}) =>
   json(200, { solicitacao_id: 5, codigo: '3M2MSSYA', segredo: SEGREDO, expira_em: '2026-11-07T21:15:20-03:00', ...extra });
 
+/**
+ * Os testes de ROTA montam um AppContext de verdade, que usa o relógio do sistema —
+ * diferente do `setup()` acima, onde o `now` é injetado. Com prazo fixo no fixture eles
+ * passavam a falhar a partir da hora em que esse prazo vencia (aconteceu de verdade em
+ * 2026-11-08 00:15 UTC). O prazo aqui é sempre relativo ao agora.
+ */
+const prazoVivo = () => new Date(Date.now() + 30 * 60_000).toISOString();
+const solicitadaAte = (expiraEm: string) => solicitada({ expira_em: expiraEm });
+
 function setup(responses: Array<Response | Error> = []) {
   const db = new Db(':memory:'); dbs.push(db);
   let now = new Date('2026-11-07T23:45:20.000Z'); // 20:45 -03:00: 30 min antes de expirar
@@ -326,8 +335,9 @@ const admin = { authorization: 'Bearer adm', host: 'painel.local', origin: 'http
 
 it('rotas: fluxo completo, token/segredo nunca vazam, origem e papel são exigidos', async () => {
   const { ctx, app } = await makeApp();
+  const expiraEm = prazoVivo();
   const fetchMock = vi.fn()
-    .mockResolvedValueOnce(solicitada())
+    .mockResolvedValueOnce(solicitadaAte(expiraEm))
     .mockResolvedValueOnce(json(200, { status: 'aprovada', token: TOKEN }));
   vi.stubGlobal('fetch', fetchMock);
 
@@ -340,7 +350,7 @@ it('rotas: fluxo completo, token/segredo nunca vazam, origem e papel são exigid
 
   const post = await app.inject({ method: 'POST', url: '/api/v1/mapasjw/pair', headers: admin, payload: body });
   expect(post.statusCode).toBe(200);
-  expect(post.json()).toEqual({ solicitacaoId: 5, codigo: '3M2MSSYA', expiraEm: '2026-11-07T21:15:20-03:00' });
+  expect(post.json()).toEqual({ solicitacaoId: 5, codigo: '3M2MSSYA', expiraEm });
   const get = await app.inject({ method: 'GET', url: '/api/v1/mapasjw/pair', headers: admin });
   expect(get.json().estado).toBe('pendente');
 
@@ -370,7 +380,7 @@ it('rotas: fluxo completo, token/segredo nunca vazam, origem e papel são exigid
 
 it('rotas: 422/429 do Mapas JW viram o mesmo código HTTP com mensagem; cancel limpa', async () => {
   const { app } = await makeApp();
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(422, {})).mockResolvedValueOnce(json(429, {})).mockResolvedValueOnce(solicitada()));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(422, {})).mockResolvedValueOnce(json(429, {})).mockResolvedValueOnce(solicitadaAte(prazoVivo())));
   const body = JSON.stringify({ baseUrl: BASE, nome: 'Salão', slug: 'exemplo' });
   const r422 = await app.inject({ method: 'POST', url: '/api/v1/mapasjw/pair', headers: admin, payload: body });
   expect(r422.statusCode).toBe(422); expect(r422.json().message).toMatch(/slug/);
