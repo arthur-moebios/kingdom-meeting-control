@@ -4,29 +4,33 @@ import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply }
 import websocket from '@fastify/websocket';
 import staticFiles from '@fastify/static';
 import type { WebSocket } from '@fastify/websocket';
-import type { DeviceAccess, RemoteTimerState, TimerRoom } from '@kmc/shared-types';
+import type { DeviceAccess, RemotePainel, RemoteTimerState, TimerRoom } from '@kmc/shared-types';
 import type { AppContext } from './context.js';
+import { isWeekendMeeting } from './attendance.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const ACCESS: readonly DeviceAccess[] = ['readonly','main','b','both'];
 export const isDeviceAccess = (value: unknown): value is DeviceAccess => ACCESS.includes(value as DeviceAccess);
-interface Device { id:string; label:string; createdAt:string; digest: string; expires: number; access: DeviceAccess; }
+interface Device { id:string; label:string; createdAt:string; digest: string; expires: number; access: DeviceAccess; painel: boolean; }
 export class MobileTimers {
   private devices: Device[] = [];
   private attempts = new Map<string,{ count: number; expires: number }>();
-  constructor(private readonly ctx: AppContext) {
+  constructor(private readonly ctx: AppContext, private readonly clock: () => Date = () => new Date()) {
     try { const value=JSON.parse(ctx.db.getKv('remote.devices') || '[]');
       if(Array.isArray(value))this.devices=value.filter(d=>typeof d.digest==='string' && /^[a-f0-9]{64}$/.test(d.digest) && d.expires>Date.now()).slice(0,64)
         .map(d=>({...d,id:typeof d.id==='string'?d.id:randomBytes(12).toString('hex'),label:typeof d.label==='string'?d.label:'Celular já conectado',createdAt:typeof d.createdAt==='string'?d.createdAt:new Date(d.expires-180*24*3600_000).toISOString(),
           // Migração: aparelhos já pareados sem papel mantêm escrita total; o operador restringe depois.
-          access:isDeviceAccess(d.access)?d.access:'both'}));
+          access:isDeviceAccess(d.access)?d.access:'both',
+          // Nenhum aparelho antigo ganha o painel: só o operador concede.
+          painel:d.painel===true}));
     } catch {}
     this.save();
   }
   private save() {this.ctx.db.setKv('remote.devices',JSON.stringify(this.devices));}
   status() {const active=this.devices.filter(d=>d.expires>Date.now());return {devices:active.length,
-    deviceList:active.map(({id,label,createdAt,access})=>({id,label,createdAt,access}))};}
+    deviceList:active.map(({id,label,createdAt,access,painel})=>({id,label,createdAt,access,painel}))};}
   setAccess(id:string,access:DeviceAccess) {const device=this.devices.find(d=>d.id===id);if(!device)return false;device.access=access;this.save();return true;}
+  setPainel(id:string,painel:boolean) {const device=this.devices.find(d=>d.id===id);if(!device)return false;device.painel=painel;this.save();return true;}
   revoke(id?:string) {this.devices=id?this.devices.filter(d=>d.id!==id):[];this.save();}
   private deviceOf(req: Pick<FastifyRequest,'headers'>): Device|undefined {
     const token=String(req.headers.cookie || '').match(/(?:^|;\s*)kmc_remote=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];
@@ -34,7 +38,9 @@ export class MobileTimers {
   }
   authorize(req: FastifyRequest): boolean {return !!this.deviceOf(req);}
   accessFor(req: Pick<FastifyRequest,'headers'>): DeviceAccess {return this.deviceOf(req)?.access ?? 'readonly';}
-  canWrite(req: Pick<FastifyRequest,'headers'>, room: TimerRoom): boolean {const access=this.accessFor(req);return access==='both' || access===room;}
+  /** Fim de semana não tem Sala B (regra em attendance.isWeekendMeeting). */
+  roomBAvailable(): boolean {return !isWeekendMeeting(this.ctx.meeting.getState(),this.clock());}
+  canWrite(req: Pick<FastifyRequest,'headers'>, room: TimerRoom): boolean {if(room==='b' && !this.roomBAvailable())return false;const access=this.accessFor(req);return access==='both' || access===room;}
   pair(label: unknown, address: string): string {
     const name=typeof label==='string'?label.trim():'';
     if(!name || name.length>80)throw Object.assign(new Error('Informe um nome para identificar quem está utilizando (até 80 caracteres).'),{statusCode:400});
@@ -44,12 +50,24 @@ export class MobileTimers {
     attempt.count++;this.attempts.set(address,attempt);
     this.devices=this.devices.filter(d=>d.expires>now);
     if(this.devices.length>=64)throw Object.assign(new Error('Limite de dispositivos. Revogue os pareamentos no painel.'),{statusCode:409});
-    const token=randomBytes(32).toString('base64url');this.devices.push({id:randomBytes(12).toString('hex'),label:name,createdAt:new Date(now).toISOString(),digest:hash(token),expires:now+180*24*3600_000,access:'readonly'});
+    const token=randomBytes(32).toString('base64url');this.devices.push({id:randomBytes(12).toString('hex'),label:name,createdAt:new Date(now).toISOString(),digest:hash(token),expires:now+180*24*3600_000,access:'readonly',painel:false});
     this.save();return token;
   }
+  /** Dados do painel (nomes, anúncios, assistência). Só chamado para aparelhos com `painel: true`. */
+  private painelData(): RemotePainel {
+    const hands=this.ctx.zoom.getRaisedHands();
+    return {raisedHands:{order:hands.order.map(({id,displayName,handRaisedAt})=>({id,displayName,handRaisedAt})),orderSource:hands.orderSource,partial:hands.partial},
+      announcements:this.ctx.getSettings().tablet.announcements,attendance:this.ctx.recordedAttendance()};
+  }
   state(room:TimerRoom='main', req?: Pick<FastifyRequest,'headers'>): RemoteTimerState {
-    const base:RemoteTimerState=this.ctx.programmes?this.ctx.programmes.state(room):{meeting:this.ctx.meeting.getState(),warnSeconds:this.ctx.getSettings().meetingSchedule.warnSeconds,serverNow:new Date().toISOString()};
-    return req?{...base,access:this.accessFor(req),canWrite:this.canWrite(req,room)}:base;
+    const roomB=this.roomBAvailable(),noRoomB=room==='b' && !roomB;
+    // Fim de semana: nenhuma parte da Sala B sai do servidor (o cliente mostra o aviso).
+    const source:RemoteTimerState=this.ctx.programmes?this.ctx.programmes.state(noRoomB?'main':room):{meeting:this.ctx.meeting.getState(),warnSeconds:this.ctx.getSettings().meetingSchedule.warnSeconds,serverNow:new Date().toISOString()};
+    const base:RemoteTimerState=noRoomB?{...source,room:'b',meeting:{...source.meeting,parts:[],activePartId:null},details:undefined,period:undefined}:source;
+    if(!req)return base;
+    const out:RemoteTimerState={...base,access:this.accessFor(req),canWrite:this.canWrite(req,room),roomBAvailable:roomB};
+    // Filtragem por conexão: sem o papel `painel`, nomes/anúncios/assistência nem entram no payload.
+    return this.deviceOf(req)?.painel?{...out,painel:this.painelData()}:out;
   }
 }
 
@@ -69,6 +87,7 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     const denied=await auth(req,reply);if(denied)return denied;
     // Escrita exige papel na sala do comando (room-b/* é sempre a Sala B); leitura só exige pareamento.
     const room=req.url.split('?')[0]!.startsWith('/remote-api/room-b/')?'b':roomOf(req);
+    if(room==='b' && !service.roomBAvailable())return reply.code(403).send({error:'room_b_weekend'});
     if(!service.canWrite(req,room))return reply.code(403).send({error:'read_only'});
   };
   const writeAuth=async(req:FastifyRequest,reply:FastifyReply)=> {

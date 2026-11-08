@@ -55,6 +55,7 @@ export const api = {
   updateApply:()=>req<{started:boolean}>('POST','/update/apply',{}),
   remoteStatus:()=>req<RemoteIntegrationStatus>('GET','/remote/status'),
   remoteRevokeDevice:(id:string)=>req('POST','/remote/devices/'+encodeURIComponent(id)+'/revoke',{}),
+  remoteSetDevicePainel:(id:string,painel:boolean)=>req<RemoteIntegrationStatus>('POST','/remote/devices/'+encodeURIComponent(id)+'/painel',{painel}),
   remoteSetDeviceAccess:(id:string,access:DeviceAccess)=>req<RemoteIntegrationStatus>('POST','/remote/devices/'+encodeURIComponent(id)+'/access',{access}),
   attendance:(date:string)=>req<{date:string;presencial:number}>('GET','/attendance/'+date),
   setAttendance:(date:string,presencial:number)=>req<{date:string;presencial:number}>('PUT','/attendance/'+date,{presencial}),

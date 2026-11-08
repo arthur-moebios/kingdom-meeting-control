@@ -219,9 +219,14 @@ export class AppContext {
     this.bus.publish("attendance.changed", { date: a.date, presencial: a.presencial, zoom: a.zoom, total: a.total });
   }
 
-  getSnapshot(): Snapshot {
+  /** Assistência de HOJE; null quando nada foi registrado no dia (nem presencial, nem Zoom). */
+  recordedAttendance(): AttendanceSummary | null {
     const today = this.todayAttendance();
     const recorded = today.zoom !== null || this.db.getPresencialOrNull(today.date) !== null;
+    return recorded ? today : null;
+  }
+
+  getSnapshot(): Snapshot {
     return {
       status: this.zoom.getStatus(),
       participants: this.zoom.listParticipants(),
@@ -232,7 +237,7 @@ export class AppContext {
       meeting: this.meeting.getState(),
       meetingNames: this.programmes.mainAssignments(),
       settings: this.settings,
-      attendance: recorded ? today : null,
+      attendance: this.recordedAttendance(),
     };
   }
 

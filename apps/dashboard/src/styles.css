@@ -425,3 +425,30 @@ legend { color: var(--accent); font-size: 13px; padding: 0 6px; font-weight: 600
 .remote-device button { flex-shrink:0; }
 .m-assignment { font-size:11px; line-height:1.3; color:var(--muted); white-space:normal; overflow-wrap:anywhere; }
 .rc-pair input { width:100%; box-sizing:border-box; font:16px system-ui,sans-serif; letter-spacing:normal; margin-top:8px; }
+
+/* ---- PWA remoto: barra inferior e abas (escopo .rc-app; padrão visual do Mapas JW, sem dependência) ---- */
+.rc-app { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+.rc-bnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 100; display: flex; align-items: stretch; justify-content: center;
+  height: calc(64px + env(safe-area-inset-bottom)); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: color-mix(in srgb, var(--card) 96%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--border); box-shadow: 0 -4px 20px rgba(0, 0, 0, .25); }
+.rc-bnav-item { flex: 1 1 0; min-width: 0; max-width: 112px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  appearance: none; -webkit-appearance: none; background: transparent; border: 0; border-radius: 0; padding: 0; margin: 0; font: inherit; cursor: pointer; color: var(--muted); line-height: 1; min-height: 44px; }
+.rc-bnav-item svg { display: block; width: 22px; height: 22px; flex: 0 0 auto; }
+.rc-bnav-item span { display: block; max-width: 100%; font-size: 11px; font-weight: 600; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-bnav-item.active { color: var(--accent); }
+@media (max-width: 400px) { .rc-bnav-item span { font-size: 10px; } }
+.rc-tab-section h2, .rc-card h2 { font-size: 16px; margin: 0 0 8px; }
+.rc-tab-section p { margin: 6px 0; }
+.rc-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
+.rc-painel-title { font-size: 20px; font-weight: 700; margin: 2px 0; }
+.rc-painel-clock { font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.rc-painel-clock.over { color: #f87171; }
+.rc-hands { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rc-hands li { display: grid; grid-template-columns: 28px 1fr; column-gap: 10px; align-items: center; padding: 8px 10px; background: var(--cardAlt); border-radius: 10px; }
+.rc-hands li .small { grid-column: 2; }
+.rc-hand-pos { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; grid-row: span 2; }
+.rc-hand-name { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.rc-announce { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; line-height: 1.5; }
+.rc-wrap { white-space: normal; max-width: none; }
+.rc-row-plain { grid-template-columns: 1fr auto; }
+.remote-painel { display: flex; gap: 6px; align-items: center; margin-top: 6px; }

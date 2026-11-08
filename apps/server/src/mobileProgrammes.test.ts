@@ -32,7 +32,8 @@ function setup(options:{db?:Pick<Db,'getKv'|'setKv'>;seed?:boolean}={}) {
     getSettings:()=>SettingsSchema.parse({}),bus:{subscribe:()=>()=>{}},
   } as unknown as AppContext;
   Object.assign(ctx,{meeting:new MeetingService({log:ctx.logger,getSettings:()=>ctx.getSettings(),emit:globalEmit,loadState:()=>ctx.db.getKv('main'),saveState:json=>ctx.db.setKv('main',json)})});
-  Object.assign(ctx,{programmes:new MobileProgrammes(ctx),mobile:new MobileTimers(ctx)});
+  // Relógio fixo numa quarta-feira: a Sala B só existe no meio de semana e o teste não pode depender do dia em que roda.
+  Object.assign(ctx,{programmes:new MobileProgrammes(ctx),mobile:new MobileTimers(ctx,()=>new Date('2026-10-21T20:00:00'))});
   if(options.seed!==false)ctx.programmes.store(parseProgrammePages([fixture],'fixture.pdf'));
   return {ctx,kv,globalEmit};
 }

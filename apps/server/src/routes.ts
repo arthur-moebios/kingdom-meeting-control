@@ -396,6 +396,13 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     if(!ctx.mobile.setAccess((req.params as {id:string}).id,access))return reply.code(404).send({error:'device_not_found'});
     return ctx.mobile.status();
   });
+  // Papel `painel` (mãos levantadas, anúncios, nomes): campo separado do acesso por sala; só o operador concede.
+  app.post('/api/v1/remote/devices/:id/painel',remoteAdmin,async(req,reply)=> {
+    const painel=(req.body as {painel?:unknown}|null)?.painel;
+    if(typeof painel!=='boolean')return reply.code(400).send({error:'invalid_painel'});
+    if(!ctx.mobile.setPainel((req.params as {id:string}).id,painel))return reply.code(404).send({error:'device_not_found'});
+    return ctx.mobile.status();
+  });
   app.post('/api/v1/remote/revoke',remoteAdmin,async()=> {ctx.mobile.revoke();return {ok:true};});
   app.post('/api/v1/remote/cloudflare/authorize',remoteAdmin,async()=>ctx.cloudflare.authorize());
   app.post('/api/v1/remote/cloudflare/setup',remoteAdmin,async(req,reply)=> {

@@ -298,11 +298,27 @@ export interface ProgrammePart { number: string; section: string; title: string;
 export interface ImportedProgramme { id: string; date: string; label: string; kind: MeetingKind; sourceFile: string; mainParts: ProgrammePart[]; roomBParts: ProgrammePart[]; conductorB: string; warnings: string[]; }
 /** Papel de um aparelho do PWA: somente leitura, uma sala ou ambas. */
 export type DeviceAccess = 'readonly' | 'main' | 'b' | 'both';
-export interface RemoteTimerState { meeting: MeetingSchedule; warnSeconds: number; serverNow: string; room?: TimerRoom; details?: TimerDetails; period?:{weekLabel:string;dateLabel:string|null;matchesMainWeek:boolean}; access?: DeviceAccess; canWrite?: boolean; }
+/** Mão levantada como o PWA a recebe: só o necessário para a lista (sem mudo, anfitrião etc.). */
+export interface RemotePainelHand { id: string; displayName: string; /** Quando o SERVIDOR detectou a mão — não é o horário real. */ handRaisedAt: string | null; }
+/**
+ * Dados da aba Painel. Só vão no payload de aparelhos com `painel: true` (papel concedido pelo operador,
+ * separado de `DeviceAccess`). Contêm nomes de participantes: nunca enviar a outros aparelhos.
+ */
+export interface RemotePainel {
+  raisedHands: { order: RemotePainelHand[]; orderSource: HandOrderSource; partial: boolean };
+  announcements: string;
+  /** Assistência de HOJE; null quando nada foi registrado no dia. */
+  attendance: AttendanceSummary | null;
+}
+export interface RemoteTimerState { meeting: MeetingSchedule; warnSeconds: number; serverNow: string; room?: TimerRoom; details?: TimerDetails; period?:{weekLabel:string;dateLabel:string|null;matchesMainWeek:boolean}; access?: DeviceAccess; canWrite?: boolean;
+  /** false no fim de semana: a Sala B só existe na reunião de meio de semana (o estado da sala B vem sem partes). */
+  roomBAvailable?: boolean;
+  /** Presente apenas para aparelhos com o papel `painel`. */
+  painel?: RemotePainel; }
 export interface RemoteIntegrationStatus {
   bundled: boolean; version: string; authorized: boolean; phase: string; enabled: boolean;
   configured: boolean; publicUrl: string; authorizationUrl: string | null; busy: boolean; error: string | null; publicReady:boolean;
-  devices: number; deviceList:{id:string;label:string;createdAt:string;access:DeviceAccess}[]; gatewayPort: number; gatewayAvailable: boolean;
+  devices: number; deviceList:{id:string;label:string;createdAt:string;access:DeviceAccess;painel:boolean}[]; gatewayPort: number; gatewayAvailable: boolean;
 }
 
 /** Partial update accepted by PUT /settings. */

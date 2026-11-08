@@ -137,6 +137,30 @@ requisição de rede é feita (um clone limpo deste repositório não fala com n
 - Os testes do servidor com SQLite exigem Node 22+ (`node:sqlite`) e usam um shim
   de alias no `vitest.config.ts`, porque o Vite 5 não resolve `node:sqlite`.
 
+## PWA: papel Painel, barra inferior e Sala B no fim de semana (2026-11-07)
+- **Papel `painel`** (campo `painel: boolean` por aparelho em `remote.devices`, separado de
+  `DeviceAccess`). Nasce `false`; aparelhos antigos migram como `false`; só o operador liga, em
+  `POST /api/v1/remote/devices/:id/painel` (admin + Origin igual ao Host). Aparelhos com `painel`
+  recebem no `RemoteTimerState` o campo opcional `painel` (mãos levantadas com nome, anúncios e
+  assistência de hoje); os demais não recebem esses campos no payload. 🟡 Testado só com vitest
+  sobre o payload (HTTP e WebSocket simulados). Ligar o painel faz **nomes de participantes
+  saírem pela internet** (túnel Cloudflare) para aquele aparelho; o servidor não tem como saber
+  quem de fato segura o celular.
+- **Ordem das mãos.** `handRaisedAt` é o horário em que o servidor DETECTOU a mão, não o horário
+  real; a aba Painel mostra "detectada há cerca de N min" e avisa quando a lista é parcial.
+  A aba é somente leitura (não dispensa mãos, ao contrário do app da tribuna).
+- **Sala B no fim de semana.** Regra: `deriveTipo(meeting.kind, dia)` (reunião carregada validada
+  contra a semana ISO e o dia); `fim_de_semana` => sem Sala B, `meio_semana` => com Sala B, e sem
+  reunião carregada/em conflito vale o dia (sábado/domingo = sem Sala B). Nesse caso o servidor
+  devolve a Sala B sem partes, recusa comandos (`room_b_weekend`) e o PWA esconde seletor e aba.
+  Aparelho com acesso só `b` vê uma mensagem explicando. 🟡 Heurística: uma reunião especial de
+  Sala B num fim de semana não é suportada de propósito.
+- **NÃO VALIDADO AO VIVO.** A nova tela (barra de 5 abas, aba Painel, mensagem da Sala B) foi
+  compilada e tipada (`build:dashboard`, `typecheck`), mas **não foi aberta em navegador nem em
+  celular real**: layout, safe-area, rolagem e a barra fixa sobre o conteúdo estão sem verificação
+  visual. Também não foi exercitado com Zoom real nem pelo túnel Cloudflare. O botão central
+  elevado do padrão do Mapas JW não foi reproduzido.
+
 ## Windows startup
 - Task Scheduler "at logon" agent + watchdog. 🟡 script provided
   (`scripts/install-windows.ps1`), validate on the target PC.

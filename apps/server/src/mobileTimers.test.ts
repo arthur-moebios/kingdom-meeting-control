@@ -2,22 +2,29 @@ import { afterEach, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { MeetingScheduleSchema, SettingsSchema } from '@kmc/shared-types';
 import { MobileTimers, buildRemoteGateway } from './mobileTimers.js';
+import { registerRoutes } from './routes.js';
+import Fastify from 'fastify';
 import type { AppContext } from './context.js';
 import type { FastifyInstance } from 'fastify';
 
 const apps:FastifyInstance[]=[];
 afterEach(async()=> {vi.restoreAllMocks();await Promise.all(apps.splice(0).map(app=>app.close()));});
-async function setup() {
+// Quarta-feira (meio de semana) e sábado, fictícios mas com o dia da semana real.
+const WEDNESDAY=new Date('2026-11-04T20:00:00'),SATURDAY=new Date('2026-11-07T10:00:00');
+const HAND={id:'p1',displayName:'Participante Fictício Um',handRaised:true,handRaisedAt:'2026-11-04T19:58:00.000Z',isHost:false,isCoHost:false,isMuted:true};
+async function setup(options:{now?:Date;kind?:'weekend'|'midweek'|null}={}) {
   const kv=new Map<string,string>();
-  const meeting=MeetingScheduleSchema.parse({activePartId:'one',parts:[{id:'one',order:0,title:'Parte de teste',section:'INÍCIO',allottedSec:60}]});
+  const meeting=MeetingScheduleSchema.parse({kind:options.kind??null,activePartId:'one',parts:[{id:'one',order:0,title:'Parte de teste',section:'INÍCIO',allottedSec:60}]});
   const start=vi.fn();
   const ctx={cfg:{publicDir:path.resolve('apps/dashboard/dist')},cloudflare:{gatewayPort:4320,publicOrigin:'https://timers.example.test',instanceId:'test-instance'},
     db:{getKv:(key:string)=>kv.get(key) ?? null,setKv:(key:string,value:string)=>kv.set(key,value)},
     getSettings:()=>SettingsSchema.parse({meeting:{passcode:'must-not-be-public'},tablet:{announcements:'private'}}),
     meeting:{getState:()=>meeting,start,pause:vi.fn(),pauseAndAdvance:vi.fn(),reset:vi.fn(),setActive:vi.fn()},
     bus:{subscribe:()=>()=>{}},
+    zoom:{getRaisedHands:()=>({order:[HAND],orderSource:'detection-time',partial:true})},
+    recordedAttendance:()=>({date:'2026-11-04',zoom:3,presencial:40,total:43}),
   } as unknown as AppContext;
-  (ctx as {mobile:MobileTimers}).mobile=new MobileTimers(ctx);
+  (ctx as {mobile:MobileTimers}).mobile=new MobileTimers(ctx,()=>options.now??WEDNESDAY);
   const app=await buildRemoteGateway(ctx);apps.push(app);await app.ready();
   const headers={host:'timers.example.test',origin:'https://timers.example.test'};
   async function pair() {
@@ -38,7 +45,7 @@ it('public gateway never exposes operator pages, snapshots, settings or Zoom con
 it('paired clients receive only timers and may issue only allowed timer commands',async()=> {
   const {app,pair,headers,start,kv,ctx}=await setup();const {cookie}=await pair();
   const response=await app.inject({url:'/remote-api/state',headers:{...headers,cookie}});
-  expect(response.statusCode).toBe(200);expect(Object.keys(response.json()).sort()).toEqual(['access','canWrite','meeting','serverNow','warnSeconds']);
+  expect(response.statusCode).toBe(200);expect(Object.keys(response.json()).sort()).toEqual(['access','canWrite','meeting','roomBAvailable','serverNow','warnSeconds']);
   expect(response.json()).toMatchObject({access:'readonly',canWrite:false});
   ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'both');
   expect(response.body).not.toContain('must-not-be-public');expect(response.body).not.toContain('private');
@@ -120,4 +127,110 @@ it('migrates device records without access to both',async()=> {
   expect(new MobileTimers(ctx).status().deviceList[0]!.access).toBe('both');
   kv.set('remote.devices',JSON.stringify(JSON.parse(kv.get('remote.devices')!).map((d:object)=>({...d,access:'main'}))));
   expect(new MobileTimers(ctx).status().deviceList[0]!.access).toBe('main');
+});
+
+// ---- Papel `painel` (mãos levantadas, anúncios, nomes) e Sala B no fim de semana ----
+const SENSITIVE=['Participante Fictício Um','p1','"painel"','announcements','raisedHands'];
+async function wsMessage(app:FastifyInstance,headers:Record<string,string>,query=''):Promise<string> {
+  const socket=await app.injectWS('/remote-api/ws'+query,{headers});
+  const text=await new Promise<string>(resolve=>socket.once('message',(data:unknown)=>resolve(String(data))));
+  socket.terminate();return text;
+}
+it('new devices are born without painel; legacy records migrate as false; only setPainel grants it',async()=> {
+  const {ctx,kv,pair}=await setup();await pair();const id=ctx.mobile.status().deviceList[0]!.id;
+  expect(ctx.mobile.status().deviceList[0]!.painel).toBe(false);
+  kv.set('remote.devices',JSON.stringify(JSON.parse(kv.get('remote.devices')!).map(({painel,...d}:{painel:boolean})=>d)));
+  expect(new MobileTimers(ctx).status().deviceList[0]!.painel).toBe(false);
+  kv.set('remote.devices',JSON.stringify(JSON.parse(kv.get('remote.devices')!).map((d:object)=>({...d,painel:'true'}))));
+  expect(new MobileTimers(ctx).status().deviceList[0]!.painel).toBe(false);
+  expect(ctx.mobile.setPainel(id,true)).toBe(true);expect(ctx.mobile.status().deviceList[0]!.painel).toBe(true);
+  expect(new MobileTimers(ctx).status().deviceList[0]!.painel).toBe(true);
+  expect(ctx.mobile.setPainel('nope',true)).toBe(false);
+  ctx.mobile.setAccess(id,'both');expect(ctx.mobile.status().deviceList[0]!.painel).toBe(true);
+});
+it('a device without painel never receives hands, announcements or participant names (HTTP and WebSocket payloads)',async()=> {
+  const {app,pair,headers}=await setup();const {cookie}=await pair(),h={...headers,cookie};
+  const http=await app.inject({url:'/remote-api/state',headers:h});
+  const ws=await wsMessage(app,h);
+  for(const body of [http.body,ws]) {
+    for(const word of SENSITIVE)expect(body).not.toContain(word);
+    expect(body).not.toContain('private');
+    expect(JSON.parse(body)).toMatchObject({roomBAvailable:true});expect(JSON.parse(body).painel).toBeUndefined();
+  }
+});
+it('a device with painel receives hands, announcements and today attendance, and loses them when revoked',async()=> {
+  const {app,pair,headers,ctx}=await setup();const {cookie}=await pair(),h={...headers,cookie},id=ctx.mobile.status().deviceList[0]!.id;
+  ctx.mobile.setPainel(id,true);
+  for(const body of [(await app.inject({url:'/remote-api/state',headers:h})).body,await wsMessage(app,h)]) {
+    const painel=JSON.parse(body).painel;
+    expect(painel.raisedHands).toEqual({order:[{id:'p1',displayName:'Participante Fictício Um',handRaisedAt:HAND.handRaisedAt}],orderSource:'detection-time',partial:true});
+    expect(painel.announcements).toBe('private');expect(painel.attendance).toMatchObject({total:43});
+    expect(JSON.stringify(painel)).not.toContain('isMuted');
+  }
+  ctx.mobile.setPainel(id,false);
+  expect((await app.inject({url:'/remote-api/state',headers:h})).body).not.toContain('Participante Fictício Um');
+});
+it('the painel flag is per connection: another paired device keeps getting the filtered payload',async()=> {
+  const {app,pair,headers,ctx}=await setup();const first=await pair(),second=await pair();
+  ctx.mobile.setPainel(ctx.mobile.status().deviceList[0]!.id,true);
+  expect((await app.inject({url:'/remote-api/state',headers:{...headers,cookie:first.cookie}})).body).toContain('Participante Fictício Um');
+  expect((await app.inject({url:'/remote-api/state',headers:{...headers,cookie:second.cookie}})).body).not.toContain('Participante Fictício Um');
+});
+it('POST /api/v1/remote/devices/:id/painel requires admin and a same-origin request',async()=> {
+  const {ctx,pair}=await setup();await pair();const id=ctx.mobile.status().deviceList[0]!.id;
+  (ctx as unknown as {cfg:object}).cfg={authEnabled:true,adminToken:'admin-test',viewerToken:'viewer-test',publicDir:path.resolve('apps/dashboard/dist')};
+  const app=Fastify({logger:false});apps.push(app);registerRoutes(app,ctx);await app.ready();
+  const url=`/api/v1/remote/devices/${id}/painel`,origin={host:'op.example.test',origin:'http://op.example.test'};
+  const post=async(headers:Record<string,string>,payload:object={painel:true})=>await app.inject({method:'POST',url,headers,payload});
+  expect((await post(origin)).statusCode).toBe(401);
+  expect((await post({...origin,authorization:'Bearer viewer-test'})).statusCode).toBe(403);
+  expect((await post({...origin,authorization:'Bearer admin-test',origin:'http://evil.example'})).statusCode).toBe(403);
+  expect((await post({host:origin.host,authorization:'Bearer admin-test'})).statusCode).toBe(403);
+  expect(ctx.mobile.status().deviceList[0]!.painel).toBe(false);
+  const admin={...origin,authorization:'Bearer admin-test'};
+  expect((await post(admin,{painel:'yes'})).statusCode).toBe(400);
+  expect((await app.inject({method:'POST',url:'/api/v1/remote/devices/nope/painel',headers:admin,payload:{painel:true}})).statusCode).toBe(404);
+  const ok=await post(admin);expect(ok.statusCode).toBe(200);expect(ok.json().deviceList[0].painel).toBe(true);
+  expect((await post(admin,{painel:false})).json().deviceList[0].painel).toBe(false);
+});
+it('weekend: Room B is not offered, its state has no parts and writes are refused (kind weekend)',async()=> {
+  const {app,pair,headers,ctx,start}=await setup({now:SATURDAY,kind:'weekend'});const {cookie}=await pair(),h={...headers,cookie};
+  ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'both');
+  expect(ctx.mobile.roomBAvailable()).toBe(false);
+  const main=(await app.inject({url:'/remote-api/state',headers:h})).json();
+  expect(main).toMatchObject({roomBAvailable:false,canWrite:true});expect(main.meeting.parts).toHaveLength(1);
+  const b=(await app.inject({url:'/remote-api/state?room=b',headers:h})).json();
+  expect(b).toMatchObject({room:'b',roomBAvailable:false,canWrite:false});expect(b.meeting.parts).toEqual([]);expect(b.meeting.activePartId).toBeNull();
+  const refused=await app.inject({method:'POST',url:'/remote-api/part/one/start?room=b',headers:h,payload:{}});
+  expect(refused.statusCode).toBe(403);expect(refused.json()).toEqual({error:'room_b_weekend'});
+  expect((await app.inject({method:'POST',url:'/remote-api/room-b/prepare',headers:h,payload:{}})).statusCode).toBe(403);
+  expect(JSON.parse(await wsMessage(app,h,'?room=b'))).toMatchObject({roomBAvailable:false,meeting:{parts:[]}});
+  expect((await app.inject({method:'POST',url:'/remote-api/part/one/start',headers:h,payload:{}})).statusCode).toBe(200);expect(start).toHaveBeenCalledTimes(1);
+});
+it('weekend: a device with access only B gets the state that explains Room B is unavailable',async()=> {
+  const {app,pair,headers,ctx}=await setup({now:SATURDAY,kind:'weekend'});const {cookie}=await pair(),h={...headers,cookie};
+  ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'b');
+  for(const url of ['/remote-api/state','/remote-api/state?room=b'])
+    expect((await app.inject({url,headers:h})).json()).toMatchObject({access:'b',roomBAvailable:false,canWrite:false});
+});
+it('Room B rule: kind midweek on a weekday offers it; without a loaded meeting or on conflict the weekday decides',async()=> {
+  const check=async(now:Date,kind:'weekend'|'midweek'|null)=>(await setup({now,kind})).ctx.mobile.roomBAvailable();
+  expect(await check(WEDNESDAY,'midweek')).toBe(true);
+  expect(await check(SATURDAY,'weekend')).toBe(false);
+  expect(await check(WEDNESDAY,null)).toBe(true);
+  expect(await check(SATURDAY,null)).toBe(false);
+  expect(await check(SATURDAY,'midweek')).toBe(false);
+  expect(await check(WEDNESDAY,'weekend')).toBe(true);
+});
+it('old clients keep reading RemoteTimerState: every previous field is still present and typed the same',async()=> {
+  const {app,pair,headers,ctx}=await setup();const {cookie}=await pair(),h={...headers,cookie};
+  const before=(await app.inject({url:'/remote-api/state',headers:h})).json();
+  ctx.mobile.setPainel(ctx.mobile.status().deviceList[0]!.id,true);
+  const after=(await app.inject({url:'/remote-api/state',headers:h})).json();
+  for(const state of [before,after]) {
+    expect(typeof state.meeting.activePartId).toBe('string');expect(Array.isArray(state.meeting.parts)).toBe(true);
+    expect(typeof state.warnSeconds).toBe('number');expect(typeof state.serverNow).toBe('string');
+    expect(state.access).toBe('readonly');expect(state.canWrite).toBe(false);
+  }
+  expect({...after,painel:undefined,serverNow:0}).toEqual({...before,painel:undefined,serverNow:0});
 });

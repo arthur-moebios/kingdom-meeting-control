@@ -53,6 +53,18 @@ export function deriveTipo(meeting: MeetingSchedule | null | undefined, date: st
   return weekend ? "outra" : "meio_semana";
 }
 
+/**
+ * Regra "a Sala B não existe no fim de semana". Usa `deriveTipo` (meeting.kind validado contra a
+ * semana ISO e o dia): "fim_de_semana" => true, "meio_semana" => false. Sem reunião carregada ou
+ * em conflito ("outra"), cai no dia da semana (sábado/domingo).
+ */
+export function isWeekendMeeting(meeting: MeetingSchedule | null | undefined, now: Date = new Date()): boolean {
+  const tipo = deriveTipo(meeting, localDate(now));
+  if (tipo === "fim_de_semana") return true;
+  if (tipo === "meio_semana") return false;
+  return isWeekendDay(now);
+}
+
 /** ISO-8601 em horário local com offset, ex. 2026-11-07T20:15:03-03:00. */
 export function isoWithOffset(d: Date = new Date()): string {
   const p = (n: number) => String(n).padStart(2, "0");
