@@ -32,7 +32,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return (await res.json()) as T;
 }
 
-import type { DeviceAccess, MeetingKind, MeetingSchedule, PollResult, Settings, SettingsUpdate, RemoteIntegrationStatus, UpdateStatus } from "@kmc/shared-types";
+import type { DeviceAccess, MeetingKind, MeetingSchedule, PollResult, Settings, SettingsUpdate, RemoteIntegrationStatus, UpdateStatus, UpdateApplyResult } from "@kmc/shared-types";
 
 export interface MapasJwPairStatus {
   estado: 'nenhum' | 'pendente' | 'expirada' | 'recusada' | 'perdida' | 'erro';
@@ -52,7 +52,7 @@ export const api = {
   mapasjwDisconnect:()=>req<MapasJwSyncStatus>('POST','/mapasjw/disconnect',{}),
   updateStatus:()=>req<UpdateStatus>('GET','/update/status'),
   updateCheck:()=>req<UpdateStatus>('POST','/update/check',{}),
-  updateApply:()=>req<{started:boolean}>('POST','/update/apply',{}),
+  updateApply:()=>req<UpdateApplyResult>('POST','/update/apply',{}),
   remoteStatus:()=>req<RemoteIntegrationStatus>('GET','/remote/status'),
   remoteRevokeDevice:(id:string)=>req('POST','/remote/devices/'+encodeURIComponent(id)+'/revoke',{}),
   remoteSetDevicePainel:(id:string,painel:boolean)=>req<RemoteIntegrationStatus>('POST','/remote/devices/'+encodeURIComponent(id)+'/painel',{painel}),

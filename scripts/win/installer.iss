@@ -17,7 +17,7 @@
   #define OutDir "."
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.4.0"
+  #define AppVersion "0.4.1"
 #endif
 #define AppName "Kingdom Meeting Control"
 #define AppExe "KingdomMeetingControl.exe"
@@ -58,4 +58,7 @@ Name: "{autoprograms}\Desinstalar {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Run]
+; Instalação manual: caixa "Abrir agora". Na atualização automática (/SILENT) esta entrada é
+; pulada de propósito (skipifsilent): quem reabre o app é o script auxiliar do updater
+; (apps/server/src/update.ts), depois que o instalador termina. Não use /RESTARTAPPLICATIONS.
 Filename: "{app}\{#AppExe}"; Description: "Abrir o {#AppName} agora"; Flags: nowait postinstall skipifsilent

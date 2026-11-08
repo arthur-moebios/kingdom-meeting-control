@@ -11,7 +11,7 @@ import { NotSupportedError } from "@kmc/zoom-web-adapter";
 import type { AppContext } from "./context.js";
 import { requireAdmin, requireViewer } from "./auth.js";
 import { isDeviceAccess } from "./mobileTimers.js";
-import { APP_VERSION, applyUpdate } from "./update.js";
+import { APP_VERSION, applyUpdate, UpdateError } from "./update.js";
 import { PairingError } from "./mapasjwPairing.js";
 
 const VERSION = APP_VERSION;
@@ -340,8 +340,17 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.post("/api/v1/update/apply", admin, async (_req, reply) => {
     const info = await ctx.checkForUpdate();
     ctx.db.audit("admin", "update.apply", { from: info.current, to: info.latest });
-    try { return await applyUpdate(info); }
-    catch (err) { return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) }); }
+    try {
+      const result = await applyUpdate(info);
+      // O auxiliar já subiu e espera o app sair: encerra de forma graciosa (mesmo caminho do botão "Encerrar"),
+      // depois de a resposta chegar à interface.
+      setTimeout(() => ctx.onShutdownRequest?.("update"), 1500);
+      return result;
+    } catch (err) {
+      const details = err instanceof UpdateError ? err.details : {};
+      ctx.logger.error({ err: err instanceof Error ? err.message : String(err), ...details }, "update.apply failed");
+      return reply.code(400).send({ error: err instanceof Error ? err.message : String(err), ...details });
+    }
   });
   app.get("/api/v1/settings", viewer, async () => ctx.getSettings());
 

@@ -167,6 +167,27 @@ requisição de rede é feita (um clone limpo deste repositório não fala com n
 - **Must run in the interactive session** (Chromium needs a desktop); a Session‑0
   Windows Service cannot drive the browser/capture. Documented, not attempted.
 
+## Atualização automática do Windows (0.4.1)
+- **NÃO VALIDADO NUM WINDOWS REAL.** Esta máquina é Linux: o instalador Inno, o PowerShell
+  auxiliar e o fechamento do launcher nunca foram executados. Só estão cobertos por testes
+  (mocks) a montagem dos argumentos, o SHA256, o tratamento de erro do lançamento e o fato de
+  `applyUpdate` não devolver sucesso quando o auxiliar não sobe. A correção do lançamento e do
+  rollback ("Desfazendo") só será comprovada instalando a 0.4.1 e depois uma versão seguinte.
+- **Quem está na 0.3.0/0.4.0 não se beneficia sozinho:** o botão "Atualizar agora" executa o
+  código antigo, que é o que falha. A 0.4.1 precisa ser instalada uma vez à mão (baixar
+  `KingdomMeetingControl-setup.exe` da release, fechar o app e executar). As atualizações
+  seguintes é que usam o fluxo novo.
+- O auxiliar fecha o launcher com `CloseMainWindow`, depois encerra à força o que restar na
+  pasta do app e só então roda o instalador. Se a instalação falhar, o app antigo é reaberto e
+  uma caixa mostra o código de saída e os caminhos do instalador e do log
+  (`kmc-update.log`, em `%TEMP%\kmc-update-*`).
+- O SHA256 só é conferido se a release tiver `KingdomMeetingControl-setup.exe.sha256`. As
+  releases até a 0.4.0 não têm: nesse caso a atualização segue só com tamanho e cabeçalho `MZ`
+  (aviso no log do servidor). Hash divergente, malformado ou inacessível (não-404) aborta.
+- Rollback: cada versão fica também numa release imutável `v<versão>`. O updater lê apenas
+  `pc-latest`; reverter exige baixar o instalador da release antiga e executá-lo à mão
+  (ou republicar `pc-latest`).
+
 ## Recommended authoritative alternative
 For reliable participant/reaction/host data, the **Zoom Meeting SDK + REST API +
 Webhooks** is the correct long‑term source and avoids DOM fragility entirely. It

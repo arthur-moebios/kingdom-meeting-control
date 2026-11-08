@@ -422,4 +422,6 @@ export interface UpdateStatus {
   current: string; latest: string | null; available: boolean;
   assetUrl: string | null; assetSize: number | null; checkedAt: string; error: string | null;
 }
+/** Resposta de POST /update/apply quando o auxiliar de instalação subiu (o app será encerrado em seguida). */
+export interface UpdateApplyResult { started: true; installerPath: string; logPath: string; hashVerified: boolean }
 export type AttendanceSummary = z.infer<typeof AttendanceSummarySchema>;
