@@ -167,6 +167,35 @@ requisição de rede é feita (um clone limpo deste repositório não fala com n
 - **Must run in the interactive session** (Chromium needs a desktop); a Session‑0
   Windows Service cannot drive the browser/capture. Documented, not attempted.
 
+## Prévia da câmera do anfitrião e "Ocultar Zoom" (0.4.2)
+- **A PARTE NATIVA NÃO FOI COMPILADA NEM EXECUTADA.** Esta máquina é Linux: nenhum trecho de
+  C#/WinForms (`scripts/win/OperatorDesktop.cs`) foi compilado ou rodado. Só a lógica da página
+  (regra de obstrução, máquina de estados) e um teste de contrato que compara os códigos de
+  motivo do C# com os da página têm cobertura automática. Composição DWM, ordem Z, "Ocultar
+  Zoom", o retorno host para página e o comportamento com vários monitores **só o Windows do
+  usuário pode comprovar**. Erros de compilação são possíveis até que alguém rode a build.
+- **Defeito corrigido:** com "Ocultar Zoom" a janela ia para fora do desktop virtual, deixava de
+  ser composta e a miniatura DWM congelava no último quadro. Agora a janela fica dentro da área
+  de trabalho, alinhada ao painel e no fim da ordem Z (o painel a cobre). **Premissa não
+  verificada:** que o DWM continua compondo, e o Zoom continua desenhando, uma janela totalmente
+  ocluída. Pode falhar com driver de vídeo que suspende janelas cobertas, com o Zoom pausando o
+  render quando coberto, ou com janela maior que o painel (a parte que sobra aparece na área de
+  trabalho). Com vários monitores o Zoom é levado ao monitor do painel.
+- **Rede de segurança:** o DWM não informa se chegou quadro novo, então o app não consegue provar
+  frescor. Em vez disso só mostra a prévia quando nenhum bloqueio conhecido existe (Zoom
+  minimizado, invisível, em outra área de trabalho, sem área, recorte fora dos monitores, painel
+  minimizado, varredura de acessibilidade com mais de 2 s). Fora disso a prévia é limpa e a
+  página mostra "prévia pausada" com o motivo. Um congelamento que o Windows não sinalize por
+  nenhum desses testes **continuaria passando como ao vivo**.
+- Janela do Zoom ainda existe e é enumerável (varredura) é tratada separadamente de "a composição
+  está ativa" (verificação ao vivo a cada 250 ms em `AssessCamera`).
+- A detecção de menus sobre a câmera usa hit-test em grade (passo de 16 px, até 10x10 pontos).
+  Elementos com `pointer-events: none` não são vistos pelo hit-test; um menu estreito (menos
+  de ~16 px) que passe entre dois pontos também não. Menus só com `:hover` são pegos pela
+  verificação periódica (500 ms), com atraso de até esse tempo.
+- O estado do host para a página usa `PostWebMessageAsString` (novo canal host para página),
+  reenviado a cada 2 s; sem mensagem por mais de 6 s a página mostra "o app Windows não responde".
+
 ## Atualização automática do Windows (0.4.1)
 - **NÃO VALIDADO NUM WINDOWS REAL.** Esta máquina é Linux: o instalador Inno, o PowerShell
   auxiliar e o fechamento do launcher nunca foram executados. Só estão cobertos por testes

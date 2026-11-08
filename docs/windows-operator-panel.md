@@ -49,8 +49,13 @@ Contagens inconsistentes também não são apresentadas como assistência válid
   reposiciona a janela de projeção. Desacoplar ou fechar restaura o tamanho
   que o próprio painel alterou.
 - **Ocultar Zoom / Mostrar Zoom**: guarda posição e estilos da janela de
-  reunião, retira sua entrada da barra/Alt+Tab e posiciona-a fora da área de
-  trabalho virtual. Mantém a janela não minimizada para permitir composição.
+  reunião, retira sua entrada da barra/Alt+Tab e a mantém DENTRO da área de
+  trabalho (0.4.2): alinhada ao painel e no fim da ordem Z, de modo que o
+  painel a cobre. Janela fora da área virtual deixa de ser composta e a prévia
+  congelava no último quadro. Janela ocluída continua composta pelo DWM. Se o
+  app não puder afirmar a composição (Zoom minimizado, fora do desktop, sem
+  área, em outra área de trabalho), a prévia é limpa e a página mostra
+  "prévia pausada" com o motivo.
   Não silencia, liga câmera, compartilha, encerra ou sai da reunião. Fechar o
   painel restaura a janela. Falha/crash do processo ainda exige recuperação
   manual da posição; não é uma ocultação persistente instalada no Windows.

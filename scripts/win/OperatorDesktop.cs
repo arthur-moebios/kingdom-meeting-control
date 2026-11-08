@@ -34,6 +34,8 @@ internal static class DesktopWindows
     [DllImport("user32.dll")] internal static extern IntPtr GetWindowLongPtr(IntPtr handle, int index);
     [DllImport("user32.dll", SetLastError = true)] internal static extern IntPtr SetWindowLongPtr(IntPtr handle, int index, IntPtr value);
     [DllImport("user32.dll")] internal static extern bool SetWindowPos(IntPtr handle, IntPtr after, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
+    internal static readonly IntPtr HwndBottom = new IntPtr(1);
     [DllImport("dwmapi.dll")] internal static extern int DwmGetWindowAttribute(IntPtr handle, int attribute, out int value, int bytes);
     internal static string Text(IntPtr handle) { var s = new StringBuilder(512); GetWindowText(handle, s, s.Capacity); return s.ToString(); }
     internal static string Class(IntPtr handle) { var s = new StringBuilder(256); GetClassName(handle, s, s.Capacity); return s.ToString(); }
@@ -78,6 +80,36 @@ internal static class DesktopWindows
         }, IntPtr.Zero);
         return matches.Count == 1 ? matches[0] : IntPtr.Zero;
     }
+}
+
+// Reasons shared with the dashboard (apps/dashboard/src/cameraState.ts). The page
+// turns each code into text; a vitest contract test compares both lists.
+internal static class CameraReason
+{
+    public const string Ok = "ok";
+    public const string Desligada = "desligada";
+    public const string PainelMinimizado = "painel-minimizado";
+    public const string OcultaPelaPagina = "oculta-pela-pagina";
+    public const string VarreduraAntiga = "varredura-antiga";
+    public const string ZoomMinimizado = "zoom-minimizado";
+    public const string ZoomInvisivel = "zoom-invisivel";
+    public const string ZoomOutraArea = "zoom-outra-area";
+    public const string ZoomSemArea = "zoom-sem-area";
+    public const string ZoomForaDoDesktop = "zoom-fora-do-desktop";
+    public const string Procurando = "procurando";
+    public const string ZoomAusente = "zoom-ausente";
+    public const string CameraNaoEncontrada = "camera-nao-encontrada";
+    public const string CameraAmbigua = "camera-ambigua";
+    public const string VarreduraFalhou = "varredura-falhou";
+    public const string DwmRecusou = "dwm-recusou";
+}
+
+// Kind is "active", "paused" or "unavailable". Only "active" may show video.
+internal sealed class CameraAssessment
+{
+    public readonly string Kind, Reason;
+    public CameraAssessment(string kind, string reason) { Kind = kind; Reason = reason; }
+    public bool Active { get { return Kind == "active"; } }
 }
 
 internal sealed class HostVideoPreview : Form
@@ -146,7 +178,13 @@ internal sealed class OperatorDesktop : IDisposable
     IntPtr hostSource;
     string hostStatus = "Procurando a câmera do anfitrião…";
     DateTime nextScan = DateTime.MinValue;
-    DateTime hostObservedAt = DateTime.MinValue;
+    // The last UI Automation scan found the Zoom window and the host camera pane.
+    // That only proves the window EXISTS; whether the DWM is still COMPOSING it is
+    // decided live by AssessCamera, never by how recent this scan is.
+    DateTime hostScanAt = DateTime.MinValue;
+    string hostReason = CameraReason.Procurando;
+    DateTime dwmFailedAt = DateTime.MinValue, nextZoomSink = DateTime.MinValue, lastPostedAt = DateTime.MinValue;
+    string lastPostedState;
     public event Action<bool> WorkspaceChanged;
     string desktopRequest = "";
     public OperatorDesktop(Form form, Control surface = null)
@@ -183,7 +221,7 @@ internal sealed class OperatorDesktop : IDisposable
         surface.SizeChanged += (s,e) => { if(!embeddedCamera) previewArea.Height=Math.Min(previewArea.Height,Math.Max(80,surface.ClientSize.Height-tools.Height-cameraDivider.Height-300)); else PositionEmbeddedCamera(); PositionPreview(); };
         dockButton.CheckedChanged += (s, e) => { if (!dockButton.Checked) RestoreJw(); else nextScan = DateTime.MinValue; };
         zoomButton.CheckedChanged += (s, e) => { if (!zoomButton.Checked) RestoreZoom(); };
-        previewButton.CheckedChanged += (s, e) => { previewArea.Visible = previewButton.Checked && (!embeddedCamera || cameraSlotVisible); cameraDivider.Visible = previewButton.Checked && !embeddedCamera; if (!previewButton.Checked) preview.ClearVideo(); else if(embeddedCamera) PositionEmbeddedCamera(); };
+        previewButton.CheckedChanged += (s, e) => { cameraDivider.Visible = previewButton.Checked && !embeddedCamera; if (!embeddedCamera) previewArea.Visible = previewButton.Checked; if (!previewButton.Checked) preview.ClearVideo(); if (embeddedCamera) PositionEmbeddedCamera(); else PositionPreview(); };
         form.LocationChanged += (s, e) => PositionPreview();
         form.SizeChanged += (s, e) => PositionPreview();
         timer = new Timer { Interval = 250 };
@@ -195,7 +233,7 @@ internal sealed class OperatorDesktop : IDisposable
     {
         embeddedCamera=true;cameraWeb=web;
         previewArea.Dock=DockStyle.None;previewArea.Visible=false;cameraDivider.Visible=false;
-        web.CoreWebView2.NavigationStarting += (s,e) => {cameraSlotVisible=false;PositionEmbeddedCamera();};
+        web.CoreWebView2.NavigationStarting += (s,e) => {cameraSlotVisible=false;lastPostedState=null;PositionEmbeddedCamera();};
         web.SizeChanged += (s,e) => PositionEmbeddedCamera();
         web.LocationChanged += (s,e) => PositionEmbeddedCamera();
         web.CoreWebView2.WebMessageReceived += (s,e) => {
@@ -209,21 +247,21 @@ internal sealed class OperatorDesktop : IDisposable
                 double scale=numbers[4];if(scale<0.25 || scale>8)return;
                 cameraSlot=new Rectangle((int)Math.Round(numbers[0]*scale),(int)Math.Round(numbers[1]*scale),(int)Math.Round(numbers[2]*scale),(int)Math.Round(numbers[3]*scale));
                 cameraSlotVisible=values[6]=="1" && cameraSlot.Width>0 && cameraSlot.Height>0;
+                lastPostedState=null; // the page just announced itself: answer with the current preview state
                 PositionEmbeddedCamera();
             } catch { }
         };
     }
+    bool SlotGeometryUsable() { return cameraSlotVisible && cameraWeb != null && cameraWeb.ClientRectangle.Contains(cameraSlot); }
     void PositionEmbeddedCamera()
     {
         if(!embeddedCamera || cameraWeb==null || disposed)return;
-        bool visible=cameraSlotVisible && previewButton.Checked && cameraWeb.ClientRectangle.Contains(cameraSlot);
-        previewArea.Visible=visible;
-        if(visible) {
+        if(SlotGeometryUsable()) {
             var screen=cameraWeb.RectangleToScreen(cameraSlot);
             var point=previewArea.Parent.PointToClient(screen.Location);
             previewArea.Bounds=new Rectangle(point,screen.Size);previewArea.BringToFront();
         }
-        PositionPreview();
+        PositionPreview(); // also decides whether previewArea is shown at all
     }
     void Tick(object sender, EventArgs args)
     {
@@ -240,10 +278,10 @@ internal sealed class OperatorDesktop : IDisposable
                 }
             }
         } catch { }
-        if (zoom != IntPtr.Zero && (!DesktopWindows.IsWindow(zoom) || !DesktopWindows.IsZoom(zoom))) { zoom = IntPtr.Zero; zoomHidden = false; hostSource = IntPtr.Zero; }
+        if (zoom != IntPtr.Zero && (!DesktopWindows.IsWindow(zoom) || !DesktopWindows.IsZoom(zoom))) { zoom = IntPtr.Zero; zoomHidden = false; hostSource = IntPtr.Zero; hostReason = CameraReason.ZoomAusente; }
         if (zoom == IntPtr.Zero) zoom = DesktopWindows.Zoom();
         if (zoomButton.Checked && zoom != IntPtr.Zero && !zoomHidden) HideNativeZoom();
-        if (zoomHidden) KeepOutsideDesktop(zoom);
+        if (zoomHidden) KeepBehindPanel(zoom);
         if (dockButton.Checked && jw != IntPtr.Zero && DesktopWindows.IsWindow(jw)) FollowJw();
         if (DateTime.UtcNow >= nextScan && !scanning)
         {
@@ -253,23 +291,23 @@ internal sealed class OperatorDesktop : IDisposable
             Task.Run(() =>
             {
                 IntPtr foundJw = findJw ? DesktopWindows.JwOperator() : IntPtr.Zero;
-                Rectangle crop; string message;
-                FindHost(zoomAtScan, out crop, out message);
+                Rectangle crop; string message, reason;
+                FindHost(zoomAtScan, out crop, out message, out reason);
                 if (disposed || !form.IsHandleCreated) return;
                 try { form.BeginInvoke((Action)(() =>
                 {
                     scanning = false; if (disposed) return;
                     if (foundJw != IntPtr.Zero && dockButton.Checked) AttachJw(foundJw);
-                    if (zoomAtScan == zoom) { hostCrop = crop; hostSource = crop.IsEmpty ? IntPtr.Zero : zoomAtScan; hostStatus = message; hostObservedAt = DateTime.UtcNow; }
+                    if (zoomAtScan == zoom) { hostCrop = crop; hostSource = crop.IsEmpty ? IntPtr.Zero : zoomAtScan; hostStatus = message; hostReason = reason; hostScanAt = DateTime.UtcNow; }
                     PositionPreview();
                 })); } catch { }
             });
         }
         PositionPreview();
     }
-    static void FindHost(IntPtr source, out Rectangle crop, out string message)
+    static void FindHost(IntPtr source, out Rectangle crop, out string message, out string reason)
     {
-        crop = Rectangle.Empty; message = "Abra a reunião no Zoom nativo";
+        crop = Rectangle.Empty; message = "Abra a reunião no Zoom nativo"; reason = CameraReason.ZoomAusente;
         if (source == IntPtr.Zero || !DesktopWindows.IsWindow(source)) return;
         try
         {
@@ -289,7 +327,7 @@ internal sealed class OperatorDesktop : IDisposable
                 if (!hostRole.IsMatch(name)) continue;
                 if (name.IndexOf("Vídeo desligado", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("Video off", StringComparison.OrdinalIgnoreCase) >= 0) continue;
                 string owner = name.Substring(0, name.IndexOf(')') + 1);
-                if (identity != null && identity != owner) { message = "Câmera do anfitrião ambígua"; return; }
+                if (identity != null && identity != owner) { message = "Câmera do anfitrião ambígua"; reason = CameraReason.CameraAmbigua; return; }
                 identity = owner;
                 var r = pane.Current.BoundingRectangle;
                 var rect = Rectangle.FromLTRB((int)r.Left, (int)r.Top, (int)r.Right, (int)r.Bottom);
@@ -310,21 +348,91 @@ internal sealed class OperatorDesktop : IDisposable
             if (Environment.GetEnvironmentVariable("KMC_DESKTOP_DIAGNOSTICS") == "1")
                 try { System.IO.File.WriteAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "native-desktop.log"), diagnostic.ToString() + "Crop: " + crop); } catch { }
             message = best.IsEmpty ? "Câmera do anfitrião fora da área visível do Zoom" : "Câmera do anfitrião";
+            reason = best.IsEmpty ? CameraReason.CameraNaoEncontrada : CameraReason.Ok;
         }
-        catch { message = "Prévia do anfitrião temporariamente indisponível"; }
+        catch { message = "Prévia do anfitrião temporariamente indisponível"; reason = CameraReason.VarreduraFalhou; }
+    }
+    // "Window exists" (hostSource, from the scan) is NOT "composition is active".
+    // Returns the reason the DWM may not be composing the source window, or null
+    // when every check we can make says it is. There is no freshness feedback from
+    // the DWM, so null means "no known blocker", and AssessCamera only reports
+    // "active" when this returns null.
+    static string CompositionBlocker(IntPtr source, Rectangle crop)
+    {
+        if (DesktopWindows.IsIconic(source)) return CameraReason.ZoomMinimizado;
+        if (!DesktopWindows.IsWindowVisible(source)) return CameraReason.ZoomInvisivel;
+        int cloaked;
+        if (DesktopWindows.DwmGetWindowAttribute(source, 14, out cloaked, 4) == 0 && cloaked != 0) return CameraReason.ZoomOutraArea;
+        var bounds = DesktopWindows.Bounds(source);
+        if (bounds.Width <= 0 || bounds.Height <= 0 || crop.Width <= 0 || crop.Height <= 0) return CameraReason.ZoomSemArea;
+        var onScreen = crop; onScreen.Offset(bounds.Left, bounds.Top);
+        long covered = 0;
+        foreach (var screen in Screen.AllScreens)
+        {
+            var part = Rectangle.Intersect(onScreen, screen.Bounds);
+            covered += (long)part.Width * part.Height;
+        }
+        if (covered < (long)onScreen.Width * onScreen.Height) return CameraReason.ZoomForaDoDesktop;
+        return null;
+    }
+    CameraAssessment AssessCamera()
+    {
+        if (!previewButton.Checked) return new CameraAssessment("paused", CameraReason.Desligada);
+        if (form.WindowState == FormWindowState.Minimized || !form.Visible) return new CameraAssessment("paused", CameraReason.PainelMinimizado);
+        if (hostSource == IntPtr.Zero) return new CameraAssessment("unavailable", hostReason);
+        if (!DesktopWindows.IsWindow(hostSource)) return new CameraAssessment("unavailable", CameraReason.ZoomAusente);
+        string blocker = CompositionBlocker(hostSource, hostCrop);
+        if (blocker != null) return new CameraAssessment("paused", blocker);
+        if (DateTime.UtcNow - hostScanAt > TimeSpan.FromSeconds(2)) return new CameraAssessment("paused", CameraReason.VarreduraAntiga);
+        if (DateTime.UtcNow - dwmFailedAt < TimeSpan.FromSeconds(3)) return new CameraAssessment("unavailable", CameraReason.DwmRecusou);
+        if (embeddedCamera && !SlotGeometryUsable()) return new CameraAssessment("paused", CameraReason.OcultaPelaPagina);
+        return new CameraAssessment("active", CameraReason.Ok);
+    }
+    static string PausedText(string reason)
+    {
+        switch (reason)
+        {
+            case CameraReason.ZoomMinimizado: return "Prévia pausada: o Zoom está minimizado";
+            case CameraReason.ZoomInvisivel: return "Prévia pausada: a janela do Zoom está oculta";
+            case CameraReason.ZoomOutraArea: return "Prévia pausada: o Zoom está em outra área de trabalho";
+            case CameraReason.ZoomSemArea: return "Prévia pausada: a janela do Zoom está sem área";
+            case CameraReason.ZoomForaDoDesktop: return "Prévia pausada: o Zoom está fora da área de trabalho";
+            case CameraReason.VarreduraAntiga: return "Prévia pausada: aguardando nova leitura do Zoom";
+            default: return "Prévia pausada";
+        }
+    }
+    void PostCameraState(CameraAssessment a)
+    {
+        if (!embeddedCamera || cameraWeb == null || cameraWeb.CoreWebView2 == null || disposed) return;
+        string payload = "kmc-camera-state|" + a.Kind + "|" + a.Reason;
+        var now = DateTime.UtcNow;
+        // Re-sent every 2 s as a heartbeat: the page treats silence as "host not answering".
+        if (payload == lastPostedState && now - lastPostedAt < TimeSpan.FromSeconds(2)) return;
+        lastPostedState = payload; lastPostedAt = now;
+        try { cameraWeb.CoreWebView2.PostWebMessageAsString(payload); } catch { }
     }
     void PositionPreview()
     {
         if (disposed) return;
-        status.Text = hostStatus;
-        if (!previewButton.Checked || !previewArea.Visible || form.WindowState == FormWindowState.Minimized || !form.Visible || hostSource == IntPtr.Zero || DateTime.UtcNow - hostObservedAt > TimeSpan.FromSeconds(2))
-        { preview.ClearVideo(); status.Text = hostStatus; return; }
+        var assessment = AssessCamera();
+        // In the embedded layout the page itself shows the state text, so the native
+        // panel (which would cover it) is only shown while the preview is really live.
+        if (embeddedCamera && previewArea.Visible != assessment.Active) previewArea.Visible = assessment.Active;
+        status.Text = assessment.Kind == "paused" ? PausedText(assessment.Reason) : hostStatus;
+        PostCameraState(assessment);
+        // The last frame must never stay on screen unless composition is affirmed.
+        if (!assessment.Active || !previewArea.Visible) { preview.ClearVideo(); return; }
         try
         {
             Rectangle rect = previewArea.RectangleToScreen(previewArea.ClientRectangle);
             preview.UpdateVideo(form, rect, hostSource, hostCrop);
         }
-        catch { preview.ClearVideo(); status.Text = "Prévia indisponível; use Mostrar Zoom"; }
+        catch
+        {
+            preview.ClearVideo(); dwmFailedAt = DateTime.UtcNow;
+            status.Text = "Prévia indisponível; use Mostrar Zoom";
+            PostCameraState(AssessCamera());
+        }
     }
     void AttachJw(IntPtr target)
     {
@@ -354,10 +462,15 @@ internal sealed class OperatorDesktop : IDisposable
         zoomOriginal = DesktopWindows.Save(zoom); zoomStyle = DesktopWindows.GetWindowLongPtr(zoom, -20);
         long style = (zoomStyle.ToInt64() | 0x80) & ~0x40000L;
         DesktopWindows.SetWindowLongPtr(zoom, -20, new IntPtr(style));
-        var bounds = DesktopWindows.Bounds(zoom); var desktop = SystemInformation.VirtualScreen;
-        // Keep rendering for the preview. SW_HIDE/minimize can stop composition.
-        zoomHidden = DesktopWindows.SetWindowPos(zoom, IntPtr.Zero, desktop.Right + 128, desktop.Top,
-            bounds.Width, bounds.Height, 0x34);
+        var bounds = DesktopWindows.Bounds(zoom);
+        // Keep rendering for the preview. SW_HIDE, minimize and a position fully
+        // outside the virtual desktop all stop composition (the thumbnail freezes on
+        // the last frame). Instead the window stays on the desktop, at the bottom of
+        // the Z-order and aligned with this panel, so the panel covers it. An occluded
+        // window is still composed by the DWM; AssessCamera pauses the preview if not.
+        var target = BehindPanelBounds(bounds);
+        zoomHidden = DesktopWindows.SetWindowPos(zoom, DesktopWindows.HwndBottom, target.X, target.Y,
+            bounds.Width, bounds.Height, 0x30);
         if (!zoomHidden) DesktopWindows.SetWindowLongPtr(zoom, -20, zoomStyle);
         zoomButton.Text = zoomHidden ? "Mostrar Zoom" : "Ocultar Zoom";
     }
@@ -369,6 +482,8 @@ internal sealed class OperatorDesktop : IDisposable
             DesktopWindows.SetWindowLongPtr(zoom, -20, zoomStyle);
             DesktopWindows.SetWindowPlacement(zoom, ref zoomOriginal);
             DesktopWindows.SetWindowPos(zoom, IntPtr.Zero, 0, 0, 0, 0, 0x37);
+            // HideNativeZoom sent it to the bottom; bring it back to the top without activating.
+            DesktopWindows.SetWindowPos(zoom, IntPtr.Zero, 0, 0, 0, 0, 0x13);
         }
         zoomHidden = false; zoomButton.Text = "Ocultar Zoom";
         if (activate && zoom != IntPtr.Zero && DesktopWindows.IsZoom(zoom)) {
@@ -385,11 +500,25 @@ internal sealed class OperatorDesktop : IDisposable
             DesktopWindows.SetForegroundWindow(zoom);
         }
     }
-    void KeepOutsideDesktop(IntPtr handle)
+    Rectangle BehindPanelBounds(Rectangle current)
     {
-        var bounds = DesktopWindows.Bounds(handle); var screen = SystemInformation.VirtualScreen;
-        if (!bounds.IsEmpty && screen.IntersectsWith(bounds))
-            DesktopWindows.SetWindowPos(handle, IntPtr.Zero, screen.Right + 128, screen.Top, bounds.Width, bounds.Height, 0x14);
+        // Same monitor as the panel, fully inside its working area when it fits.
+        var work = Screen.FromControl(form).WorkingArea;
+        int x = Math.Max(work.Left, Math.Min(form.Left, work.Right - current.Width));
+        int y = Math.Max(work.Top, Math.Min(form.Top, work.Bottom - current.Height));
+        return new Rectangle(x, y, current.Width, current.Height);
+    }
+    void KeepBehindPanel(IntPtr handle)
+    {
+        var bounds = DesktopWindows.Bounds(handle);
+        // A minimized Zoom is left alone; the preview reports it as paused.
+        if (bounds.IsEmpty || DesktopWindows.IsIconic(handle)) return;
+        var target = BehindPanelBounds(bounds);
+        bool moved = bounds.Location != target.Location;
+        bool sink = DateTime.UtcNow >= nextZoomSink && DesktopWindows.GetForegroundWindow() != handle;
+        if (!moved && !sink) return;
+        nextZoomSink = DateTime.UtcNow.AddSeconds(2);
+        DesktopWindows.SetWindowPos(handle, DesktopWindows.HwndBottom, target.X, target.Y, bounds.Width, bounds.Height, 0x10);
     }
     void RestoreJw()
     {
