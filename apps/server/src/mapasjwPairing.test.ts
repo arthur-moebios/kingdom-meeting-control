@@ -9,7 +9,7 @@ import { AppContext } from './context.js';
 import { buildApp } from './app.js';
 import { LogRingBuffer } from './logger.js';
 import { MapasJwPairing, PAIRING_KV_KEY, PairingError } from './mapasjwPairing.js';
-import { MAPASJW_AUTH_KEY, MAPASJW_KV_KEY, resolveMapasJwConfig, tokenFingerprint } from './mapasjwConfig.js';
+import { MAPASJW_AUTH_KEY, MAPASJW_KV_KEY, destinoFingerprint, resolveMapasJwConfig, tokenFingerprint } from './mapasjwConfig.js';
 
 const BASE = 'https://exemplo.invalid';
 const TOKEN = 'kmc_' + 'ab'.repeat(32);
@@ -158,18 +158,39 @@ it('não permite segunda solicitação enquanto há uma pendente; cancelar liber
   expect((await pairing.solicitar(BASE, 'Salão', 'exemplo')).solicitacaoId).toBe(6);
 });
 
-it('expiração: passou do prazo, não consulta mais e mostra "expirada"', async () => {
-  const { pairing, fetchMock, setNow, db } = setup([solicitada()]);
+it('expiração: vencida, faz UMA consulta final e só então marca "expirada"', async () => {
+  const { pairing, fetchMock, setNow, db } = setup([solicitada(), json(200, { status: 'pendente' })]);
   await pairing.solicitar(BASE, 'Salão', 'exemplo');
   setNow('2026-11-08T00:15:21.000Z'); // 21:15:21 -03:00
   expect(pairing.status().estado).toBe('expirada');
   expect(pairing.status().codigo).toBeNull();
   expect((await pairing.consultar()).estado).toBe('expirada');
-  expect(fetchMock).toHaveBeenCalledTimes(1); // só a solicitação
+  expect(fetchMock).toHaveBeenCalledTimes(2); // solicitação + consulta final
   expect(JSON.parse(db.getKv(PAIRING_KV_KEY)!).segredo).toBe('');
+  await pairing.consultar();
+  await pairing.consultar();
+  expect(fetchMock).toHaveBeenCalledTimes(2); // nenhuma consulta além da final
   // expirada não bloqueia nova solicitação
   fetchMock.mockImplementationOnce(async () => solicitada({ solicitacao_id: 7, expira_em: '2026-11-07T22:00:00-03:00' }));
   expect((await pairing.solicitar(BASE, 'Salão', 'exemplo')).solicitacaoId).toBe(7);
+});
+
+it('expiração: aprovação em cima da hora ainda é recebida pela consulta final', async () => {
+  const { pairing, setNow, db, onPaired } = setup([solicitada(), json(200, { status: 'aprovada', token: TOKEN })]);
+  await pairing.solicitar(BASE, 'Salão', 'exemplo');
+  setNow('2026-11-08T00:15:21.000Z');
+  expect((await pairing.consultar()).estado).toBe('nenhum');
+  expect(JSON.parse(db.getKv(MAPASJW_KV_KEY)!).token).toBe(TOKEN);
+  expect(onPaired).toHaveBeenCalledTimes(1);
+});
+
+it('expiração: falha de rede na consulta final também encerra como expirada (sem laço)', async () => {
+  const { pairing, setNow, fetchMock } = setup([solicitada(), new TypeError('rede')]);
+  await pairing.solicitar(BASE, 'Salão', 'exemplo');
+  setNow('2026-11-08T00:15:21.000Z');
+  expect((await pairing.consultar()).estado).toBe('expirada');
+  await pairing.consultar();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
 it('erros transitórios (rede, 5xx, 429) mantêm pendente; 404 encerra como expirada', async () => {
@@ -220,6 +241,67 @@ it('desconectar apaga a config e o push volta a ficar inativo', async () => {
   expect(db.getKv(MAPASJW_KV_KEY)).toBeNull();
   expect(db.getKv(MAPASJW_AUTH_KEY)).toBeNull();
   expect(resolveMapasJwConfig(db, {})).toBeNull();
+});
+
+// -- fila de saída: um destino nunca recebe item montado para outro ----------------
+
+const ANTIGO = { baseUrl: BASE, token: 'kmc_' + '11'.repeat(32), instancia: 'a' };
+const enqueueFor = (db: Db, cfg: { baseUrl: string; token: string }, date: string) =>
+  db.outboxEnqueue(date, 'fim_de_semana', JSON.stringify({ data: date, tipo: 'fim_de_semana', presencial: 10, zoom: null, instancia: '' }), '2026-11-07T23:00:00.000Z', destinoFingerprint(cfg));
+
+it('desconectar descarta os envios pendentes (e devolve quantos)', () => {
+  const { pairing, db } = setup();
+  db.setKv(MAPASJW_KV_KEY, JSON.stringify(ANTIGO));
+  enqueueFor(db, ANTIGO, '2026-11-01'); enqueueFor(db, ANTIGO, '2026-11-02');
+  expect(db.outboxCounts().pending).toBe(2);
+  expect(pairing.desconectar()).toBe(2);
+  expect(db.outboxCounts().pending).toBe(0);
+});
+
+it('parear com destino diferente descarta os pendentes ANTES de onPaired', async () => {
+  const { pairing, db, onPaired } = setup([solicitada(), json(200, { status: 'aprovada', token: TOKEN })]);
+  db.setKv(MAPASJW_KV_KEY, JSON.stringify(ANTIGO));
+  enqueueFor(db, ANTIGO, '2026-11-01');
+  onPaired.mockImplementation(() => { expect(db.outboxCounts().pending).toBe(0); });
+  await pairing.solicitar(BASE, 'Salão', 'exemplo');
+  await pairing.consultar();
+  expect(onPaired).toHaveBeenCalledTimes(1);
+  expect(db.outboxCounts().pending).toBe(0);
+});
+
+it('parear sem config anterior também descarta pendentes de origem desconhecida', async () => {
+  const { pairing, db } = setup([solicitada(), json(200, { status: 'aprovada', token: TOKEN })]);
+  enqueueFor(db, ANTIGO, '2026-11-01');
+  await pairing.solicitar(BASE, 'Salão', 'exemplo');
+  await pairing.consultar();
+  expect(db.outboxCounts().pending).toBe(0);
+});
+
+it('item com marca de destino antigo (ou sem marca) é recusado no envio mesmo se sobrar na fila', async () => {
+  const { AttendanceSync } = await import('./attendanceSync.js');
+  const { MeetingScheduleSchema } = await import('@kmc/shared-types');
+  const db = new Db(':memory:'); dbs.push(db);
+  const env = { KMC_MAPASJW_URL: BASE, KMC_MAPASJW_TOKEN: TOKEN };
+  const fetchMock = vi.fn(async () => json(200, { ok: true, atualizado: true }));
+  const sync = new AttendanceSync({
+    db, logger, appVersion: '0.3.0', env, fetch: fetchMock as unknown as typeof fetch, now: () => new Date('2026-11-07T23:15:03.000Z'),
+    getMeeting: () => MeetingScheduleSchema.parse({ source: 'wol', kind: 'weekend', wolUrl: 'https://wol.exemplo.invalid/2026/45' }),
+  });
+  enqueueFor(db, ANTIGO, '2026-11-01'); // marca de outro destino
+  expect(await sync.tick()).toBe('failed');
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(db.outboxCounts()).toEqual({ pending: 0, failed: 1 });
+  expect(db.outboxList(1)[0]!.lastError).toMatch(/outro destino/);
+  // sem marca (linha antiga de antes da migração) também é recusada
+  db.setPresencial('2026-11-07', 40);
+  enqueueFor(db, { baseUrl: BASE, token: TOKEN }, '2026-11-02');
+  (db as unknown as { db: { exec(s: string): void } }).db.exec("UPDATE attendance_outbox SET destino = NULL WHERE status = 'pending'");
+  expect(await sync.tick()).toBe('failed');
+  expect(fetchMock).not.toHaveBeenCalled();
+  // item do destino atual segue normalmente
+  expect(sync.enqueue('2026-11-07')).toBe(true);
+  expect(await sync.tick()).toBe('sent');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
 // -- rotas + integração com o AttendanceSync ----------------------------------
@@ -275,9 +357,12 @@ it('rotas: fluxo completo, token/segredo nunca vazam, origem e papel são exigid
   expect(sync.state).toBe('connected');
   expect(sync.source).toBe('store');
 
+  expect(ctx.db.outboxCounts().pending).toBe(1);
   const off = await app.inject({ method: 'POST', url: '/api/v1/mapasjw/disconnect', headers: admin, payload: '{}' });
   expect(off.statusCode).toBe(200);
   expect(off.json().state).toBe('disabled');
+  expect(off.json().descartados).toBe(1);
+  expect(ctx.db.outboxCounts().pending).toBe(0);
   expect(off.body).not.toContain(TOKEN);
   expect(ctx.attendanceSync.isActive()).toBe(false);
   await app.close();

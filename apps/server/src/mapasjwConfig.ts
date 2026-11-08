@@ -67,6 +67,11 @@ export function resolveMapasJwConfig(kv: KvStore | null, env: NodeJS.ProcessEnv 
   return resolveMapasJwConfigWithSource(kv, env)?.config ?? null;
 }
 
+/** Marca do DESTINO de um envio (URL + token): item montado para um destino nunca vai para outro. */
+export function destinoFingerprint(cfg: { baseUrl: string; token: string }): string {
+  return createHash("sha256").update(`${cfg.baseUrl}\n${cfg.token}`).digest("hex").slice(0, 16);
+}
+
 /** Impressão digital do token (nunca o token) para lembrar qual token foi recusado. */
 export function tokenFingerprint(token: string): string {
   return createHash("sha256").update(token).digest("hex").slice(0, 16);

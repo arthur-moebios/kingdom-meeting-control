@@ -31,7 +31,9 @@ export function MapasJwPanel() {
   };
   const connect = () => run(async () => { await api.mapasjwPair(baseUrl.trim(), nome.trim(), slug.trim()); setBaseUrl(''); setSlug(''); });
   const disconnect = () => {
-    if (!window.confirm('Desconectar do Mapas JW? A assistência deixa de ser enviada até parear de novo. A aprovação no Mapas JW continua existindo lá até ser revogada por um gestor.')) return;
+    const n = sync?.pending ?? 0;
+    const aviso = n > 0 ? `${n} envio(s) pendente(s) serão DESCARTADOS e não serão enviados depois. ` : 'Não há envios pendentes. ';
+    if (!window.confirm(`Desconectar do Mapas JW? ${aviso}A assistência deixa de ser enviada até parear de novo. A aprovação no Mapas JW continua existindo lá até ser revogada por um gestor.`)) return;
     return run(() => api.mapasjwDisconnect());
   };
 

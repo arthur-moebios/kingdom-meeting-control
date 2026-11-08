@@ -3,6 +3,7 @@ import type { Db, OutboxRow } from "./db.js";
 import { deriveTipo, isoWithOffset, zoomAttendance } from "./attendance.js";
 import {
   MAPASJW_AUTH_KEY,
+  destinoFingerprint,
   resolveMapasJwConfigWithSource,
   tokenFingerprint,
   type MapasJwConfig,
@@ -74,7 +75,8 @@ export class AttendanceSync {
    * Sem configuração não faz nada. Retorna true se enfileirou.
    */
   enqueue(date: string): boolean {
-    if (!this.resolve()) return false;
+    const resolved = this.resolve();
+    if (!resolved) return false;
     const { db } = this.d;
     const presencial = db.getPresencialOrNull(date);
     const zoom = zoomAttendance(db.pollResultsForDate(date));
@@ -90,7 +92,7 @@ export class AttendanceSync {
       instancia: "",
       versao_kmc: this.d.appVersion,
     };
-    db.outboxEnqueue(date, tipo, JSON.stringify(payload), at.toISOString());
+    db.outboxEnqueue(date, tipo, JSON.stringify(payload), at.toISOString(), destinoFingerprint(resolved.config));
     if (!this.stopped) this.schedule(0);
     return true;
   }
@@ -151,6 +153,11 @@ export class AttendanceSync {
     if (this.authFailed(cfg)) return "paused"; // token recusado: só retoma com outro token
     const row = this.d.db.outboxNextDue(this.now().toISOString());
     if (!row) return "idle";
+    // Trava de destino: item montado para outra URL/token (ou de origem desconhecida) nunca é entregue a esta.
+    if (row.destino !== destinoFingerprint(cfg)) {
+      this.permanent(row, "descartado: pertence a outro destino do Mapas JW (a conexão mudou)", null);
+      return "failed";
+    }
     if (this.now().getTime() - Date.parse(row.createdAt) > MAX_AGE_MS) {
       this.permanent(row, "expirado após 3 dias sem conseguir enviar", null);
       return "failed";

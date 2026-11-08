@@ -113,14 +113,18 @@ requisição de rede é feita (um clone limpo deste repositório não fala com n
   a tela em navegador (só typecheck e build do dashboard). Hipóteses não confirmadas:
   404/410 na consulta tratados como "expirada"; outros 4xx como erro final; 5xx, 429 e
   falha de rede como transitórios; "aprovada" sem token tratada como token perdido (o
-  pareamento tem de ser refeito, revogando a aprovação antiga no Mapas JW). Vencida a
-  `expira_em` (30 min) o KMC para de consultar sem uma última tentativa.
-  Desconectar apaga só a cópia local: a aprovação continua existindo no Mapas JW até um
+  pareamento tem de ser refeito, revogando a aprovação antiga no Mapas JW).   Desconectar apaga só a cópia local: a aprovação continua existindo no Mapas JW até um
   gestor revogá-la lá. Se a conexão vier de `KMC_MAPASJW_*`, Desconectar não a remove
   (o painel avisa); o que foi pareado pelo painel tem prioridade sobre o ambiente.
-  Itens já na fila de saída não são apagados ao desconectar: seguem pendentes (e
-  expiram em 3 dias) caso a instalação seja pareada de novo. Depois de parear, o KMC
-  enfileira a assistência de hoje, pois o item que levou 401 não é reenviado.
+  Fila de saída e troca de congregação: Desconectar descarta os envios pendentes (a
+  confirmação do painel informa quantos), e um pareamento novo também descarta o que
+  estiver pendente antes de reenfileirar a assistência de hoje (o item que levou 401 não
+  é reenviado sozinho). Além disso cada item da fila guarda a marca do destino
+  (impressão digital de URL + token) e o envio recusa, como falha permanente e sem
+  rede, qualquer item cuja marca não bata com a configuração atual, inclusive linhas
+  antigas sem marca. Consequência: trocar o token (ou o `KMC_MAPASJW_*`) com itens
+  pendentes os descarta em vez de entregá-los. Vencida a `expira_em`, o KMC faz UMA
+  consulta final antes de marcar a solicitação como expirada.
 - `tipo` (`meio_semana`/`fim_de_semana`/`outra`) vem de `meeting.kind`, validado
   contra a semana ISO e o dia da semana; reunião não carregada ou em conflito vira
   `outra`. 🟡 Heurística; depende de a reunião da semana estar carregada no KMC.

@@ -1,5 +1,5 @@
 import type { Db } from "./db.js";
-import { MAPASJW_AUTH_KEY, MAPASJW_KV_KEY, normalizeBaseUrl } from "./mapasjwConfig.js";
+import { MAPASJW_AUTH_KEY, MAPASJW_KV_KEY, normalizeBaseUrl, resolveMapasJwConfig } from "./mapasjwConfig.js";
 
 /**
  * Pareamento OPCIONAL com o Mapas JW: o KMC SOLICITA, um gestor APROVA lá
@@ -69,6 +69,7 @@ export interface PairingDeps {
   /** Chamado depois que o token foi gravado (ex.: reenviar a assistência de hoje). */
   onPaired?: () => void;
   fetch?: typeof fetch;
+  env?: NodeJS.ProcessEnv;
   now?: () => Date;
   pollMs?: number;
   timeoutMs?: number;
@@ -201,15 +202,19 @@ export class MapasJwPairing {
   async consultar(): Promise<PairingStatus> {
     const r = this.load();
     if (!r || r.estado !== "pendente") return this.status();
-    if (this.isExpired(r)) {
-      this.finish(r, "expirada", "A solicitação expirou antes de ser aprovada.");
-      return this.status();
-    }
     if (this.inFlight) return this.status();
+    // Vencida: UMA consulta final (o gestor pode ter aprovado em cima da hora) e só então "expirada".
+    const vencida = this.isExpired(r);
     this.inFlight = true;
     try {
       await this.consultarUma(r);
     } finally { this.inFlight = false; }
+    if (vencida) {
+      const depois = this.load();
+      if (depois?.estado === "pendente" && depois.solicitacaoId === r.solicitacaoId) {
+        this.finish(depois, "expirada", "A solicitação expirou antes de ser aprovada.");
+      }
+    }
     return this.status();
   }
 
@@ -257,7 +262,12 @@ export class MapasJwPairing {
   /** Grava o token ANTES de qualquer outra coisa; só então limpa a solicitação e a falha de autenticação. */
   private accept(r: PairingRecord, token: string): void {
     const { db } = this.d;
+    const anterior = resolveMapasJwConfig(db, this.d.env ?? process.env);
     db.setKv(MAPASJW_KV_KEY, JSON.stringify({ baseUrl: r.baseUrl, token, instancia: r.nome.slice(0, 80) }));
+    // Destino novo (ou desconhecido): o que estava na fila foi montado para outro e não pode ser entregue a este.
+    let descartados = 0;
+    if (!anterior || anterior.baseUrl !== r.baseUrl || anterior.token !== token) descartados = db.outboxDiscardPending();
+    if (descartados > 0) this.d.logger.warn({}, `${descartados} envio(s) pendente(s) de outro destino foram descartados ao parear`);
     db.deleteKv(PAIRING_KV_KEY);
     db.deleteKv(MAPASJW_AUTH_KEY);
     this.failures = 0; this.lastTransientError = null;
@@ -278,12 +288,15 @@ export class MapasJwPairing {
     this.timer = null;
   }
 
-  /** Desconecta de vez: apaga a configuração do store (o ambiente, se houver, continua valendo). */
-  desconectar(): void {
+  /** Desconecta de vez: apaga a configuração do store (o ambiente, se houver, continua valendo) e descarta os envios pendentes. Devolve quantos. */
+  desconectar(): number {
     this.cancelar();
     this.d.db.deleteKv(MAPASJW_KV_KEY);
     this.d.db.deleteKv(MAPASJW_AUTH_KEY);
-    this.d.logger.info({}, "Mapas JW desconectado (configuração local removida)");
+    // O que está na fila foi montado para esta conexão: não pode sobrar para a próxima.
+    const descartados = this.d.db.outboxDiscardPending();
+    this.d.logger.info({}, `Mapas JW desconectado (configuração local removida; ${descartados} envio(s) pendente(s) descartado(s))`);
+    return descartados;
   }
 
   /** Estado para o painel. NUNCA inclui o segredo, o token nem a URL. */

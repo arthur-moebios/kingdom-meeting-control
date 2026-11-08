@@ -370,9 +370,9 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return ctx.mapasjwPairing.status();
   });
   app.post("/api/v1/mapasjw/disconnect", remoteAdmin, async () => {
-    ctx.mapasjwPairing.desconectar();
-    ctx.db.audit("admin", "mapasjw.disconnect", {});
-    return ctx.attendanceSync.status();
+    const descartados = ctx.mapasjwPairing.desconectar();
+    ctx.db.audit("admin", "mapasjw.disconnect", { descartados });
+    return { ...ctx.attendanceSync.status(), descartados };
   });
   app.get("/api/v1/attendance/:date", viewer, async (req, reply) => {
     const date = dateParam(req); if (!date) return reply.code(400).send({ error: "invalid_date" });

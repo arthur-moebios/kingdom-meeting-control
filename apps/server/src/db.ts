@@ -26,6 +26,8 @@ export interface OutboxRow {
   lastError: string | null;
   createdAt: string;
   sentAt: string | null;
+  /** Impressão digital do destino (URL + token) para o qual o item foi montado; null = desconhecido. */
+  destino: string | null;
 }
 
 export class Db {
@@ -80,6 +82,9 @@ export class Db {
       );
       CREATE INDEX IF NOT EXISTS idx_attendance_outbox_status ON attendance_outbox(status, nextAttemptAt);
     `);
+    // Migração: bancos criados antes da marca de destino ganham a coluna (itens antigos ficam com NULL e são recusados no envio).
+    const cols = this.db.prepare("PRAGMA table_info(attendance_outbox)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "destino")) this.db.exec("ALTER TABLE attendance_outbox ADD COLUMN destino TEXT");
   }
 
   // -- poll results (history by day) -----------------------------------------
@@ -152,12 +157,17 @@ export class Db {
   // -- outbox da assistência (push para o Mapas JW) --------------------------
 
   /** Enfileira; envios PENDENTES do mesmo (date,tipo) são substituídos — o último valor vence. */
-  outboxEnqueue(date: string, tipo: string, payload: string, nowIso: string): number {
+  outboxEnqueue(date: string, tipo: string, payload: string, nowIso: string, destino: string): number {
     this.db.prepare("DELETE FROM attendance_outbox WHERE date = ? AND tipo = ? AND status = 'pending'").run(date, tipo);
     const info = this.db
-      .prepare("INSERT INTO attendance_outbox (date, tipo, payload, nextAttemptAt, createdAt) VALUES (?, ?, ?, ?, ?)")
-      .run(date, tipo, payload, nowIso, nowIso);
+      .prepare("INSERT INTO attendance_outbox (date, tipo, payload, nextAttemptAt, createdAt, destino) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(date, tipo, payload, nowIso, nowIso, destino);
     return Number(info.lastInsertRowid);
+  }
+
+  /** Descarta os envios ainda pendentes (montados para um destino que deixou de valer). Devolve quantos. */
+  outboxDiscardPending(): number {
+    return Number(this.db.prepare("DELETE FROM attendance_outbox WHERE status = 'pending'").run().changes);
   }
 
   outboxNextDue(nowIso: string): OutboxRow | null {

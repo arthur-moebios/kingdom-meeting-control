@@ -117,6 +117,11 @@ it('401 é permanente e derruba o estado para "disconnected" até haver outro to
   // pareamento grava um token novo no store com o servidor rodando: volta a conectar e envia
   db.setKv(MAPASJW_KV_KEY, JSON.stringify({ baseUrl: 'https://novo.exemplo.invalid', token: 'token-novo', instancia: 'x' }));
   expect(sync.status().state).toBe('connected');
+  // o item montado para o destino antigo NÃO é entregue ao novo (trava de destino)...
+  expect(await sync.tick()).toBe('failed');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  // ...mas o estado atual, enfileirado já para o destino novo, é enviado
+  sync.enqueue('2026-11-07');
   expect(await sync.tick()).toBe('sent');
   expect(fetchMock.mock.calls[1]![0]).toBe('https://novo.exemplo.invalid/api/kmc/assistencia');
   expect(db.getKv(MAPASJW_AUTH_KEY)).toBeNull();
