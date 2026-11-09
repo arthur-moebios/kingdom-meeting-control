@@ -1,6 +1,6 @@
 {
   "name": "kingdom-meeting-control",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "Windows operator panel with native Zoom, JW Library media sharing and mobile timers.",
   "type": "module",

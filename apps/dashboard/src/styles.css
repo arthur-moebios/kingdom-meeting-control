@@ -467,14 +467,13 @@ legend { color: var(--accent); font-size: 13px; padding: 0 6px; font-weight: 600
 .scene-vc { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .operator-layout .scene-btn { padding: 7px 6px; font-size: 11px; }
 
-/* Seletor de cena por parte (dentro do cronômetro) */
-.m-scene-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--border); }
-.m-scene-label { font-size: 12px; color: var(--muted); font-weight: 600; }
-.m-scene-sel { flex: 1; min-width: 140px; max-width: 280px; }
-.m-scene-fixed { color: var(--accent); font-weight: 600; }
-.operator-layout .m-scene-row { margin-top: 4px; padding-top: 6px; }
-.operator-layout .m-scene-label, .operator-layout .m-scene-sel { font-size: 11px; }
+/* Seletor de cena embutido na linha da parte (coluna à direita do título) */
+.m-lead { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.m-lead .m-rowmain { flex: 1 1 auto; min-width: 0; }
+.m-scene-inline { flex: 0 0 auto; max-width: 150px; font-size: 12px; padding: 4px 6px; }
+.m-scene-inline.fixed { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.operator-layout .m-scene-inline { max-width: 112px; font-size: 11px; padding: 3px 5px; }
+@media (max-width: 640px) { .m-scene-inline { max-width: 104px; } }
 
 /* Editor de regras (configurações) */
 .obs-rules { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }

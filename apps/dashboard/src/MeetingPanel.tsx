@@ -101,11 +101,14 @@ export function MeetingPanel({ meeting, names, warnSeconds, compact = false, obs
             const isActive = p.id === meeting.activePartId;
             return (
               <li key={p.id} className={`m-row ${isActive ? "active" : ""} ph-${ph}`}>
-                <button className="m-rowmain" onClick={() => run(() => api.meetingActive(p.id))} title={`Tornar parte atual: ${p.title}`}>
-                  <span className="m-sec">{p.section}</span>
-                  <span className="m-title">{p.title}</span>
-                  {(names?.[p.id]?.name || names?.[p.id]?.secondName) && <span className="m-assignment">{[names?.[p.id]?.name,names?.[p.id]?.secondName].filter(Boolean).join(' / ')}</span>}
-                </button>
+                <div className="m-lead">
+                  <button className="m-rowmain" onClick={() => run(() => api.meetingActive(p.id))} title={`Tornar parte atual: ${p.title}`}>
+                    <span className="m-sec">{p.section}</span>
+                    <span className="m-title">{p.title}</span>
+                    {(names?.[p.id]?.name || names?.[p.id]?.secondName) && <span className="m-assignment">{[names?.[p.id]?.name,names?.[p.id]?.secondName].filter(Boolean).join(' / ')}</span>}
+                  </button>
+                  {obs && <ScenePicker part={p} obs={obs} busy={busy} run={run} />}
+                </div>
                 <span className="m-alloc">{Math.round(p.allottedSec / 60)}m</span>
                 <span className={`m-rem ph-${ph}`}>{p.allottedSec > 0 ? fmtClock(remaining) : fmtClock(el)}</span>
                 <span className="m-ctl">
@@ -120,7 +123,6 @@ export function MeetingPanel({ meeting, names, warnSeconds, compact = false, obs
                     <button className="danger" disabled={busy} onClick={() => run(() => api.meetingRemovePart(p.id))}>✕</button>
                   )}
                 </span>
-                {obs && <ScenePicker part={p} obs={obs} busy={busy} run={run} />}
                 {adjustId === p.id && (
                   <AdjustEditor part={p} now={now} busy={busy} run={run} onDone={() => setAdjustId(null)} />
                 )}
@@ -237,25 +239,27 @@ function AdjustEditor({
   );
 }
 
-/** Cena do OBS desta parte NESTA reunião: "Automático" segue o mapa; escolher fixa. */
+/**
+ * Cena do OBS desta parte, embutida na linha. "Automático" segue o mapa (mostra a
+ * cena que o automático escolheria); escolher uma cena fixa vence o mapa só nesta
+ * reunião. A troca em si acontece quando o cronômetro da parte é iniciado.
+ */
 function ScenePicker({ part, obs, busy, run }: { part: MeetingPart; obs: ObsSceneChoice; busy: boolean; run: (fn: RunFn) => Promise<void> }) {
   const auto = resolveScene({ section: part.section, title: part.title }, obs.map);
+  const fixed = !!part.sceneOverride;
   return (
-    <div className="m-scene-row">
-      <span className="m-scene-label" title="Cena do OBS ao iniciar esta parte">🎬 Cena</span>
-      <select
-        className="m-scene-sel"
-        value={part.sceneOverride ?? ""}
-        disabled={busy}
-        onChange={(e) => run(() => api.meetingSceneOverride(part.id, e.target.value || null))}
-      >
-        <option value="">Automático{auto ? `: ${auto}` : " (sem cena)"}</option>
-        {obs.names.map((n) => (
-          <option key={n} value={n}>{n}</option>
-        ))}
-      </select>
-      {part.sceneOverride && <span className="m-scene-fixed small">fixa nesta reunião</span>}
-    </div>
+    <select
+      className={`m-scene-inline ${fixed ? "fixed" : ""}`}
+      value={part.sceneOverride ?? ""}
+      disabled={busy}
+      title={fixed ? `Cena fixa nesta reunião: ${part.sceneOverride}` : `Cena automática ao iniciar${auto ? `: ${auto}` : " (nenhuma)"}`}
+      onChange={(e) => run(() => api.meetingSceneOverride(part.id, e.target.value || null))}
+    >
+      <option value="">{auto ? `🎬 ${auto}` : "🎬 Auto"}</option>
+      {obs.names.map((n) => (
+        <option key={n} value={n}>{n}</option>
+      ))}
+    </select>
   );
 }
 
