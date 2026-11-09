@@ -111,4 +111,5 @@ export const api = {
   obsStatus: () => req<ObsStatus>("GET", "/obs/status"),
   obsScene: (scene: string) => req<ObsStatus>("POST", "/obs/scene", { scene }),
   obsReconnect: () => req<ObsStatus>("POST", "/obs/reconnect"),
+  obsPrepare: () => req<ObsStatus>("POST", "/obs/prepare"),
 };

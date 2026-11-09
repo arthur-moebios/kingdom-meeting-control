@@ -71,7 +71,9 @@ describe('applyUpdate', () => {
     const [cmd, args, opts] = spawn.mock.calls[0] as unknown as [string, string[], Record<string, unknown>];
     expect(cmd).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
     expect(args).toContain('-File');
-    expect(opts).toMatchObject({ detached: true, stdio: 'ignore' });
+    // Sem `detached` de propósito: detached + stdio 'ignore' faz o PowerShell sair sem rodar no Windows.
+    expect(opts).toMatchObject({ stdio: 'ignore', windowsHide: true });
+    expect(opts).not.toHaveProperty('detached');
     const cfg = JSON.parse(String(writes['C:\\Temp\\kmc-update-XYZ\\kmc-update.json']));
     expect(cfg).toMatchObject({ appPid: 100, launcherPid: 50, sweepDir: 'C:\\Apps\\KMC', relaunchExe: 'C:\\Apps\\KMC\\KingdomMeetingControl.exe' });
     expect(cfg.installerArgs).toEqual(installerArgs(r.logPath));

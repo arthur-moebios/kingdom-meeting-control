@@ -140,6 +140,8 @@ export const ObsStatusSchema = z.object({
   scenes: z.array(z.string()),
   /** Câmera virtual do OBS: true ligada, false desligada, null desconhecida. */
   virtualCam: z.boolean().nullable(),
+  /** O app está tentando abrir o OBS neste momento. */
+  launching: z.boolean(),
   lastError: z.string().nullable(),
   updatedAt: z.string().datetime(),
 });
@@ -316,6 +318,12 @@ export const SettingsSchema = z.object({
       password: z.string().default(""),
       /** Trocar a cena automaticamente ao INICIAR o cronômetro de uma parte. */
       autoSwitch: z.boolean().default(true),
+      /** Abrir o OBS automaticamente se não estiver rodando (o app como conferente). */
+      autoStart: z.boolean().default(false),
+      /** Caminho do obs64.exe. Vazio = detectar nos locais padrão de instalação. */
+      exePath: z.string().default(""),
+      /** Iniciar a câmera virtual do OBS quando conectar, se estiver desligada. */
+      ensureVirtualCam: z.boolean().default(true),
       /** Cena usada quando nenhuma regra casa com a parte. Vazio = não trocar. */
       defaultScene: z.string().default(""),
       /** Mapa padrão parte→cena: a PRIMEIRA regra cujo `match` aparece no texto
@@ -398,9 +406,7 @@ export interface RemoteTimerState { meeting: MeetingSchedule; warnSeconds: numbe
   /** false no fim de semana: a Sala B só existe na reunião de meio de semana (o estado da sala B vem sem partes). */
   roomBAvailable?: boolean;
   /** Presente apenas para aparelhos com o papel `painel`. */
-  painel?: RemotePainel;
-  /** Estado do OBS (cenas, cena atual). Só acompanha a Sala principal. */
-  obs?: ObsStatus; }
+  painel?: RemotePainel; }
 export interface RemoteIntegrationStatus {
   bundled: boolean; version: string; authorized: boolean; phase: string; enabled: boolean;
   configured: boolean; publicUrl: string; authorizationUrl: string | null; busy: boolean; error: string | null; publicReady:boolean;

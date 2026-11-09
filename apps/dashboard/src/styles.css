@@ -497,3 +497,8 @@ legend { color: var(--accent); font-size: 13px; padding: 0 6px; font-weight: 600
   .obs-rule { grid-template-columns: 1fr auto; grid-auto-rows: auto; }
   .obs-rule-arrow { display: none; }
 }
+
+/* OBS conferente: preparar / câmera virtual */
+.scene-offline-btns { display: flex; gap: 8px; }
+.scene-vc-warn { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rc-scene-offline { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }

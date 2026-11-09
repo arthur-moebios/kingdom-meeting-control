@@ -7,7 +7,7 @@ import type { EventEmitter } from 'node:events';
 import type { UpdateStatus, UpdateApplyResult } from '@kmc/shared-types';
 
 /** Versão corrente do app (única fonte; routes.ts e context.ts a importam). */
-export const APP_VERSION = '0.4.4';
+export const APP_VERSION = '0.4.5';
 export const UPDATE_REPO = process.env.KMC_UPDATE_REPO || 'arthur-moebios/kingdom-meeting-control';
 const ASSET_NAME = 'KingdomMeetingControl-setup.exe';
 
@@ -241,8 +241,12 @@ export async function applyUpdate(info: UpdateInfo, overrides: Partial<UpdateDep
   }
   const ps = w.join(d.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   try {
+    // NÃO usar `detached: true`: no Windows, detached + stdio 'ignore' faz o
+    // PowerShell sair com 0 SEM executar o script (a fase 2 nunca rodava). A fase 1
+    // já sobrevive o suficiente para relançar a fase 2 via Start-Process (processo
+    // independente), e confirmHelper aguarda a fase 1 sair antes de o app encerrar.
     const child = d.spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script, '-Config', cfgPath],
-      { detached: true, stdio: 'ignore', windowsHide: true });
+      { stdio: 'ignore', windowsHide: true });
     child.on('error', () => void 0); // erro tardio não pode derrubar o servidor
     await confirmHelper(child, d.helperTimeoutMs);
     (child as { unref?: () => void }).unref?.();

@@ -198,6 +198,15 @@ export function SettingsPanel({ displays, onClose, onSaved, native = false }: Pr
           <Field label="Senha do WebSocket">
             <input type="password" value={form.obs.password} onChange={(e) => setObs({ password: e.target.value })} placeholder="(OBS: Ferramentas → Servidor WebSocket)" />
           </Field>
+          <Check label="Abrir o OBS automaticamente se não estiver rodando" checked={form.obs.autoStart} onChange={(v) => setObs({ autoStart: v })} />
+          <Field label="Caminho do OBS (obs64.exe)">
+            <input value={form.obs.exePath} onChange={(e) => setObs({ exePath: e.target.value })} placeholder="(vazio = detectar em Program Files)" />
+          </Field>
+          <Check label="Iniciar a câmera virtual ao conectar (se estiver desligada)" checked={form.obs.ensureVirtualCam} onChange={(v) => setObs({ ensureVirtualCam: v })} />
+          <p className="muted small">
+            Com isso o app funciona como conferente: ao preparar a reunião, abre o OBS, liga a câmera
+            virtual e conecta. O botão “Preparar OBS” no cartão de cenas faz isso na hora.
+          </p>
           <Check label="Trocar de cena automaticamente ao iniciar a parte" checked={form.obs.autoSwitch} onChange={(v) => setObs({ autoSwitch: v })} />
           <Field label="Cena padrão (fallback)">
             <SceneField value={form.obs.defaultScene} scenes={obsScenes} onChange={(v) => setObs({ defaultScene: v })} placeholder="(nenhuma — não troca)" />

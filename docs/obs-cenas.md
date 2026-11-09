@@ -38,6 +38,29 @@ Painel do operador → **⚙ Configurações → OBS Studio (cenas → câmera v
 Quando o OBS está conectado, os campos de cena viram listas com as cenas reais do
 OBS — sem digitar nome errado.
 
+## 2.1 Conferente: o app prepara o OBS
+
+O app pode cuidar da prontidão do OBS para a reunião:
+
+- **Abrir o OBS se estiver fechado** — ligue *"Abrir o OBS automaticamente se não
+  estiver rodando"*. O app detecta o `obs64.exe` (em `Program Files`; ou informe o
+  caminho) e abre minimizado na bandeja, com `--startvirtualcam`.
+- **Ligar a câmera virtual** — com *"Iniciar a câmera virtual ao conectar"*, assim
+  que conecta, se a câmera virtual estiver desligada, o app a liga (é o que faz o
+  Zoom enxergar a "OBS Virtual Camera").
+- **Botão "Preparar OBS"** — no cartão de cenas do painel (Windows app): abre o OBS
+  se fechado e garante a câmera virtual na hora. Útil antes de começar.
+
+> Tudo do OBS (configuração, cenas, "Preparar") fica **só no Windows app**, para o
+> operador. O celular (PWA) controla apenas os cronômetros — mas **iniciar o
+> cronômetro de uma parte pelo celular também dispara a cena**, porque a automação
+> roda no servidor, não na interface.
+
+Pré-requisito: o **Servidor WebSocket** precisa estar ligado no OBS (passo 1.3) e
+ficar marcado para iniciar junto com o OBS — o app não consegue ligá-lo sozinho.
+Se o OBS abrir mas o app seguir "sem OBS", confira o WebSocket nas configurações
+do OBS.
+
 ## 3. O mapa parte → cena
 
 Cada regra tem um **trecho** e uma **cena**. Ao iniciar o cronômetro de uma parte,

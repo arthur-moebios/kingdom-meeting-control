@@ -362,6 +362,12 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return ctx.obs.getStatus();
   });
 
+  // Conferente: abre o OBS se fechado e garante a câmera virtual.
+  app.post("/api/v1/obs/prepare", admin, async () => {
+    ctx.db.audit("admin", "obs.prepare", {});
+    return ctx.obs.prepare();
+  });
+
   // -- settings --------------------------------------------------------------
   app.get("/api/v1/update/status", viewer, async () => ctx.getUpdateStatus() ?? ctx.checkForUpdate());
   app.post("/api/v1/update/check", admin, async () => ctx.checkForUpdate());

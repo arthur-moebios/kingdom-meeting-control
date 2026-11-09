@@ -242,8 +242,8 @@ function TransmissaoCard({ s, busy, run }: { s: Snapshot; busy: string | null; r
 function ScenesCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: RunNamed }) {
   const obs = s.obs;
   const auto = s.settings.obs.autoSwitch;
-  const connText = obs.connected ? "Conectado" : obs.lastError ? "Sem OBS" : "Conectando…";
-  const connDot = obs.connected ? "#22c55e" : obs.lastError ? "#ef4444" : "#f59e0b";
+  const connText = obs.connected ? "Conectado" : obs.launching ? "Abrindo o OBS…" : obs.lastError ? "Sem OBS" : "Conectando…";
+  const connDot = obs.connected ? "#22c55e" : obs.launching ? "#f59e0b" : obs.lastError ? "#ef4444" : "#f59e0b";
   return (
     <Card
       icon="🎬"
@@ -253,8 +253,11 @@ function ScenesCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: R
     >
       {!obs.connected ? (
         <div className="scene-offline">
-          <p className="muted small">{obs.lastError ? `OBS: ${obs.lastError}` : "Procurando o OBS na rede local…"}</p>
-          <button className="btn secondary small" disabled={!!busy} onClick={() => run("obsreconn", () => api.obsReconnect())}>Reconectar</button>
+          <p className="muted small">{obs.launching ? "Abrindo o OBS…" : obs.lastError ? `OBS: ${obs.lastError}` : "Procurando o OBS na rede local…"}</p>
+          <div className="scene-offline-btns">
+            <button className="btn small" disabled={!!busy} onClick={() => run("obsprep", () => api.obsPrepare())} title="Abre o OBS e inicia a câmera virtual">▶ Preparar OBS</button>
+            <button className="btn secondary small" disabled={!!busy} onClick={() => run("obsreconn", () => api.obsReconnect())}>Reconectar</button>
+          </div>
         </div>
       ) : obs.scenes.length === 0 ? (
         <p className="muted small">O OBS está conectado, mas não tem cenas. Crie as cenas no OBS primeiro.</p>
@@ -283,6 +286,12 @@ function ScenesCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: R
           />
           Trocar de cena automaticamente ao iniciar a parte
         </label>
+        {obs.connected && obs.virtualCam === false && (
+          <div className="scene-vc-warn">
+            <span className="muted small">⚠ Câmera virtual desligada — o Zoom não vê o OBS.</span>
+            <button className="btn small" disabled={!!busy} onClick={() => run("obsprep", () => api.obsPrepare())}>Ligar câmera virtual</button>
+          </div>
+        )}
       </div>
     </Card>
   );

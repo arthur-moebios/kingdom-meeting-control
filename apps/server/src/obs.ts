@@ -1,3 +1,6 @@
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 import type { ObsSettings, ObsStatus } from "@kmc/shared-types";
 
@@ -16,6 +19,15 @@ export interface ObsDeps {
 }
 
 const RECONNECT_MS = 5000;
+/** Janela em que o status mostra "abrindo o OBS" após disparar o processo. */
+const OBS_BOOT_MS = 12_000;
+/** Não tentar reabrir o OBS mais de uma vez por este intervalo. */
+const LAUNCH_COOLDOWN_MS = 60_000;
+/** Locais padrão de instalação do OBS no Windows. */
+const OBS_DEFAULT_PATHS = [
+  "C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe",
+  "C:\\Program Files (x86)\\obs-studio\\bin\\64bit\\obs64.exe",
+];
 
 /**
  * Controle remoto do OBS Studio via obs-websocket (OBS 28+). Mantém um cache do
@@ -38,6 +50,8 @@ export class ObsService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private started = false;
   private disposed = false;
+  private launchStartedAt = 0;
+  private launchCooldownUntil = 0;
 
   constructor(private readonly deps: ObsDeps) {}
 
@@ -58,6 +72,7 @@ export class ObsService {
       currentScene: this.connected ? this.currentScene : null,
       scenes: this.connected ? this.scenes : [],
       virtualCam: this.connected ? this.virtualCam : null,
+      launching: !this.connected && Date.now() - this.launchStartedAt < OBS_BOOT_MS,
       lastError: this.lastError,
       updatedAt: this.updatedAt,
     };
@@ -112,6 +127,7 @@ export class ObsService {
       this.lastError = null;
       this.wire(client);
       await this.refresh();
+      await this.ensureVirtualCam();
       this.deps.log.info({ url: obs.url }, "OBS conectado");
       this.touch();
     } catch (err) {
@@ -123,10 +139,99 @@ export class ObsService {
         /* ignore */
       }
       this.touch();
-      if (this.cfg.enabled) this.scheduleConnect();
+      if (this.cfg.enabled) {
+        this.scheduleConnect();
+        this.maybeLaunch(); // conferente: abre o OBS se estiver fechado (opt-in)
+      }
     } finally {
       this.connecting = false;
     }
+  }
+
+  // ---- Conferente: garantir OBS aberto + câmera virtual ligada ---------------
+
+  private resolveExe(): string | null {
+    if (process.platform !== "win32") return null;
+    const custom = this.cfg.exePath.trim();
+    if (custom) {
+      try {
+        return fs.existsSync(custom) ? custom : null;
+      } catch {
+        return null;
+      }
+    }
+    return OBS_DEFAULT_PATHS.find((p) => {
+      try {
+        return fs.existsSync(p);
+      } catch {
+        return false;
+      }
+    }) ?? null;
+  }
+
+  /** Abre o OBS se autoStart estiver ligado, não estivermos conectados e fora do cooldown. */
+  private maybeLaunch(): void {
+    const obs = this.cfg;
+    if (!obs.enabled || !obs.autoStart || this.connected || this.connecting) return;
+    if (Date.now() < this.launchCooldownUntil) return;
+    this.launchObs();
+  }
+
+  /** Dispara o OBS (minimizado na bandeja; inicia a câmera virtual se pedido). */
+  private launchObs(): void {
+    this.launchCooldownUntil = Date.now() + LAUNCH_COOLDOWN_MS;
+    const exe = this.resolveExe();
+    if (!exe) {
+      this.lastError = "OBS não encontrado. Defina o caminho do obs64.exe nas Configurações.";
+      this.touch();
+      return;
+    }
+    try {
+      const args = ["--disable-shutdown-check", "--minimize-to-tray"];
+      if (this.cfg.ensureVirtualCam) args.push("--startvirtualcam");
+      const child = spawn(exe, args, { cwd: path.dirname(exe), stdio: "ignore" });
+      child.on("error", (err) => {
+        this.lastError = humanError(err);
+        this.touch();
+      });
+      child.unref();
+      this.launchStartedAt = Date.now();
+      this.lastError = null;
+      this.deps.log.info({ exe }, "OBS: abrindo");
+      this.touch();
+      this.scheduleConnect(OBS_BOOT_MS); // tenta conectar depois do boot do OBS
+    } catch (err) {
+      this.lastError = humanError(err);
+      this.touch();
+    }
+  }
+
+  /** Se ensureVirtualCam e a câmera virtual estiver desligada, liga. */
+  private async ensureVirtualCam(): Promise<void> {
+    if (!this.cfg.ensureVirtualCam || !this.obs || !this.connected || this.virtualCam !== false) return;
+    try {
+      await this.obs.call("StartVirtualCam");
+      this.virtualCam = true;
+      this.touch();
+    } catch (err) {
+      this.deps.log.warn({ err: humanError(err) }, "OBS: não foi possível iniciar a câmera virtual");
+    }
+  }
+
+  /** Ação "Preparar OBS": abre se fechado; já aberto, garante a câmera virtual. */
+  async prepare(): Promise<ObsStatus> {
+    if (!this.cfg.enabled) {
+      this.lastError = "Ligue a integração com o OBS nas Configurações primeiro.";
+      this.touch();
+      return this.getStatus();
+    }
+    if (this.connected) {
+      await this.ensureVirtualCam();
+    } else {
+      this.launchCooldownUntil = 0; // o operador pediu: ignora o cooldown
+      this.launchObs();
+    }
+    return this.getStatus();
   }
 
   private wire(client: OBSWebSocket): void {

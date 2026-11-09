@@ -30,7 +30,7 @@ function setup(options:{db?:Pick<Db,'getKv'|'setKv'>;seed?:boolean}={}) {
   const ctx={cfg:{publicDir:path.resolve('apps/dashboard/dist')},cloudflare:{gatewayPort:4320,publicOrigin:'https://timers.example.test',instanceId:'test'},
     logger:{info:vi.fn(),warn:vi.fn(),error:vi.fn()},db:options.db ?? {getKv:(key:string)=>kv.get(key) ?? null,setKv:(key:string,value:string)=>kv.set(key,value)},
     getSettings:()=>SettingsSchema.parse({}),bus:{subscribe:()=>()=>{}},
-    obs:{getStatus:()=>({enabled:false,connected:false,currentScene:null,scenes:[],virtualCam:null,lastError:null,updatedAt:'2026-11-04T00:00:00.000Z'}),setScene:vi.fn(),setVirtualCam:vi.fn()},
+    obs:{getStatus:()=>({enabled:false,connected:false,currentScene:null,scenes:[],virtualCam:null,launching:false,lastError:null,updatedAt:'2026-11-04T00:00:00.000Z'}),setScene:vi.fn(),prepare:vi.fn()},
   } as unknown as AppContext;
   Object.assign(ctx,{meeting:new MeetingService({log:ctx.logger,getSettings:()=>ctx.getSettings(),emit:globalEmit,loadState:()=>ctx.db.getKv('main'),saveState:json=>ctx.db.setKv('main',json)})});
   // Relógio fixo numa quarta-feira: a Sala B só existe no meio de semana e o teste não pode depender do dia em que roda.
