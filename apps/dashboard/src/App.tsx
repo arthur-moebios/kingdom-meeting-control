@@ -283,12 +283,6 @@ function ScenesCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: R
           />
           Trocar de cena automaticamente ao iniciar a parte
         </label>
-        <div className="scene-vc">
-          <MiniStat label="Câmera virtual" on={obs.virtualCam} yes="ligada" no="desligada" />
-          <button className="btn secondary small" disabled={!!busy || !obs.connected} onClick={() => run("obsvc", () => api.obsVirtualCam(!obs.virtualCam))}>
-            {obs.virtualCam ? "Desligar" : "Ligar"}
-          </button>
-        </div>
       </div>
     </Card>
   );

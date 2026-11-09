@@ -80,7 +80,7 @@ function RemoteTimer() {
           {weekInfo}
           {state.period?.matchesMainWeek===false && <div className="rc-err" role="status">A Sala B está em outra semana. Se houver um cronômetro em execução, pause-o para carregar a semana do salão principal.</div>}
           {active && <div className="rc-active"><ActivePart part={active} now={now} warnSeconds={state.warnSeconds} busy={busy || !connected || !canWrite} run={run} commands={commands} /></div>}
-          {roomNow==='main' && state.obs?.enabled && <RemoteScenes obs={state.obs} busy={busy || !connected || !canWrite} onScene={name=>run(()=>api.obsScene(name))} onVirtualCam={on=>run(()=>api.obsVirtualCam(on))} />}
+          {roomNow==='main' && state.obs?.enabled && <RemoteScenes obs={state.obs} busy={busy || !connected || !canWrite} onScene={name=>run(()=>api.obsScene(name))} />}
           <ul className="rc-list">{meeting?.parts.map(part=> {
             const elapsed=elapsedSec(part,now),remaining=part.allottedSec-elapsed;
             return <li key={part.id} className={`rc-row ${part.id===meeting.activePartId?'active':''}`}>
@@ -116,14 +116,13 @@ function RemoteTimer() {
     {state && !pairing && <RemoteBottomNav withPainel={hasPainel} active={tab} onSelect={selectTab} />}
   </div>;
 }
-/** Cartão de cenas do OBS no celular: cena atual + cortes manuais + câmera virtual. */
-function RemoteScenes({obs,busy,onScene,onVirtualCam}:{obs:NonNullable<import('@kmc/shared-types').RemoteTimerState['obs']>;busy:boolean;onScene:(name:string)=>void;onVirtualCam:(on:boolean)=>void}) {
+/** Cartão de cenas do OBS no celular: cena atual + cortes manuais. */
+function RemoteScenes({obs,busy,onScene}:{obs:NonNullable<import('@kmc/shared-types').RemoteTimerState['obs']>;busy:boolean;onScene:(name:string)=>void}) {
   return <section className="rc-scenes">
     <div className="rc-scenes-head"><span>🎬 Cenas (OBS)</span><span className={`rc-scene-conn ${obs.connected?'on':''}`}>{obs.connected?'conectado':obs.lastError?'sem OBS':'conectando…'}</span></div>
     {!obs.connected ? <p className="small muted">{obs.lastError?`OBS: ${obs.lastError}`:'Procurando o OBS…'}</p>
       : obs.scenes.length===0 ? <p className="small muted">O OBS não tem cenas.</p>
       : <div className="rc-scene-grid">{obs.scenes.map(name=><button key={name} className={`rc-scene-btn ${name===obs.currentScene?'active':''}`} disabled={busy} onClick={()=>onScene(name)}>{name}</button>)}</div>}
-    {obs.connected && <button className="secondary small rc-scene-vc" disabled={busy} onClick={()=>onVirtualCam(!obs.virtualCam)}>{obs.virtualCam?'Desligar câmera virtual':'Ligar câmera virtual'}</button>}
   </section>;
 }
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><RemoteTimer /></React.StrictMode>);

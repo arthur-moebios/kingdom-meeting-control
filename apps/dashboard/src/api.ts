@@ -110,6 +110,5 @@ export const api = {
   // -- OBS Studio (cenas → câmera virtual do Zoom) --
   obsStatus: () => req<ObsStatus>("GET", "/obs/status"),
   obsScene: (scene: string) => req<ObsStatus>("POST", "/obs/scene", { scene }),
-  obsVirtualCam: (on?: boolean) => req<ObsStatus>("POST", "/obs/virtualcam", on === undefined ? {} : { on }),
   obsReconnect: () => req<ObsStatus>("POST", "/obs/reconnect"),
 };

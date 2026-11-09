@@ -64,12 +64,39 @@ mapa padrão continua intacto.
 ## 5. No dia
 
 - O cartão **Cenas (OBS)** aparece no painel e no celular quando a integração está
-  ligada: mostra a cena atual, botões para cortar na mão e o estado da câmera
-  virtual.
+  ligada: mostra a cena atual e botões para cortar na mão.
 - Dar **play** no cronômetro de uma parte → o OBS corta para a cena mapeada.
 - Cortar na mão numa cena → fica até a **próxima** parte começar.
 - Como o Zoom usa a OBS Virtual Camera, a prévia "Câmera do anfitrião" no painel
   passa a mostrar a própria cena cortada do OBS.
+
+## Sincronia áudio × vídeo
+
+O som vai da mesa **direto** para o microfone do notebook (quase instantâneo), mas
+o vídeo passa por câmera → OBS → câmera virtual → Zoom, o que **atrasa a imagem**
+alguns quadros. Os lábios aparecem um pouco depois do som. Para alinhar:
+
+1. **Reduza o atraso do vídeo primeiro (costuma resolver):**
+   - No OBS, clique na fonte da câmera (*Dispositivo de Captura de Vídeo*) →
+     **Propriedades** → **Buffering: Desativar**. É o maior atraso do caminho.
+   - Evite filtros pesados; mantenha resolução/FPS da saída iguais aos da câmera.
+   - No Zoom não há o que ajustar — ele não controla esse atraso.
+   - Em muitos casos o descompasso cai para algo imperceptível.
+
+2. **Se ainda notar, atrase o áudio para casar com o vídeo (correção definitiva):**
+   - Instale o **VB-CABLE** (cabo de áudio virtual).
+   - Leve o áudio da mesa para dentro do OBS (uma entrada de áudio) e, em
+     **Propriedades de Áudio Avançadas**, ajuste o **Deslocamento de sincronia
+     (ms)** dessa fonte até os lábios baterem com o som.
+   - Mande o áudio do OBS (*Monitoramento*) para o **VB-CABLE** e, no Zoom,
+     selecione o **VB-CABLE** como **microfone** (desative o mic do notebook no
+     Zoom para não duplicar o áudio).
+   - Agora áudio e vídeo saem os dois pelo OBS, e você ajusta o atraso em ms com
+     precisão. Esse caminho reintroduz o VB-CABLE — vale só quando o passo 1 não
+     basta.
+
+> O app não mexe no áudio nem no atraso do vídeo: a sincronia é configuração do
+> OBS e do roteamento de áudio, não do app.
 
 ## Resolução (ordem)
 

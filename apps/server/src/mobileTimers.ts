@@ -139,16 +139,11 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     else return reply.code(404).send({error:'not_found'});
     return service.state(room,req);
   });
-  // OBS: troca manual de cena e câmera virtual (só quem escreve na Sala principal).
+  // OBS: troca manual de cena (só quem escreve na Sala principal).
   app.post('/remote-api/obs/scene',{preHandler:commandAuth,bodyLimit:1024},async(req,reply)=> {
     const scene=(req.body as {scene?:unknown})?.scene;
     if(typeof scene!=='string' || !scene.trim())return reply.code(400).send({error:'invalid_scene'});
     try{await ctx.obs.setScene(scene.trim());}catch(error){return reply.code(409).send({error:'obs_unavailable',message:String(error)});}
-    return service.state(roomOf(req),req);
-  });
-  app.post('/remote-api/obs/virtualcam',{preHandler:commandAuth,bodyLimit:1024},async(req,reply)=> {
-    const on=(req.body as {on?:unknown})?.on;
-    try{await ctx.obs.setVirtualCam(typeof on==='boolean'?on:undefined);}catch(error){return reply.code(409).send({error:'obs_unavailable',message:String(error)});}
     return service.state(roomOf(req),req);
   });
   app.get('/remote-api/programmes',{preHandler:auth},async()=>ctx.programmes?.list() ?? []);

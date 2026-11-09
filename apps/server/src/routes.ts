@@ -357,17 +357,6 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
   });
 
-  app.post("/api/v1/obs/virtualcam", admin, async (req, reply) => {
-    const on = (req.body as { on?: unknown } | null)?.on;
-    ctx.db.audit("admin", "obs.virtualcam", { on: typeof on === "boolean" ? on : "toggle" });
-    try {
-      await ctx.obs.setVirtualCam(typeof on === "boolean" ? on : undefined);
-      return ctx.obs.getStatus();
-    } catch (err) {
-      return reply.code(409).send({ error: "obs_unavailable", message: String(err) });
-    }
-  });
-
   app.post("/api/v1/obs/reconnect", admin, async () => {
     ctx.obs.reconnect();
     return ctx.obs.getStatus();

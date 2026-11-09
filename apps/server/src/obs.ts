@@ -188,19 +188,6 @@ export class ObsService {
     this.touch("obs.scene.switched", { scene: name });
   }
 
-  /** Liga/desliga a câmera virtual; sem `on`, alterna. */
-  async setVirtualCam(on?: boolean): Promise<void> {
-    if (!this.obs || !this.connected) throw new Error("OBS não está conectado");
-    if (on === undefined) {
-      const r = await this.obs.call("ToggleVirtualCam");
-      this.virtualCam = Boolean((r as { outputActive?: boolean }).outputActive);
-    } else {
-      await this.obs.call(on ? "StartVirtualCam" : "StopVirtualCam");
-      this.virtualCam = on;
-    }
-    this.touch();
-  }
-
   private async disconnect(): Promise<void> {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
