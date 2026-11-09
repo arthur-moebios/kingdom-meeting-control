@@ -8,6 +8,8 @@ import { NativeZoomService } from './nativeZoom.js';
 import { PresentationMonitorService } from "@kmc/presentation-monitor";
 import { MeetingService } from "@kmc/meeting";
 import type { AttendanceSummary, PollResult, Settings, Snapshot } from "@kmc/shared-types";
+import { ObsService } from "./obs.js";
+import { resolveScene } from "./obsScenes.js";
 import { Db } from "./db.js";
 import { EventBus } from "./eventBus.js";
 import { CloudflareIntegration } from './cloudflare.js';
@@ -29,6 +31,8 @@ export class AppContext {
   readonly zoom: ZoomAutomationService | NativeZoomService;
   readonly presentation: PresentationMonitorService;
   readonly meeting: MeetingService;
+  /** Controle remoto do OBS Studio (cenas → câmera virtual do Zoom). */
+  readonly obs: ObsService;
   readonly cloudflare: CloudflareIntegration;
   readonly mobile: MobileTimers;
   readonly programmes: MobileProgrammes;
@@ -41,6 +45,8 @@ export class AppContext {
   /** Set by index.ts; lets an API call trigger a graceful shutdown. */
   onShutdownRequest: ((reason: string) => void) | null = null;
   private settings: Settings;
+  /** Última parte que estava correndo — detecta a transição que dispara a cena. */
+  private lastRunningPartId: string | null = null;
 
   constructor(
     readonly cfg: AppConfig,
@@ -107,6 +113,16 @@ export class AppContext {
       loadState: () => this.db.getKv("meeting"),
       saveState: (json) => this.db.setKv("meeting", json),
     });
+    this.obs = new ObsService({
+      log: logger,
+      getSettings: () => this.settings,
+      emit: (type, data) => this.bus.publish(type, data),
+    });
+    // Automação das cenas: reage ao evento da reunião PRINCIPAL (a Sala B não
+    // publica no bus), troca a cena só quando uma NOVA parte começa a correr.
+    this.bus.subscribe((ev) => {
+      if (ev.type === "meeting.updated" || ev.type === "meeting.loaded") this.followMeetingScene();
+    });
     this.cloudflare = new CloudflareIntegration(repoRoot,cfg.dataDir);
     this.programmes = new MobileProgrammes(this);
     this.mobile = new MobileTimers(this);
@@ -131,6 +147,29 @@ export class AppContext {
     this.db.saveSettings(next);
     this.db.audit("admin", "settings.update", {});
     if (this.zoom instanceof NativeZoomService) void this.zoom.applySettings().catch(err => this.logger.warn({ err: String(err) }, 'Native settings failed'));
+    this.obs.applySettings();
+  }
+
+  /**
+   * Ao INICIAR o cronômetro de uma parte (ela passa a correr), troca a cena do
+   * OBS conforme o mapa. Só dispara na transição para uma parte diferente — pausar
+   * ou ajustar não mexe na cena, e uma troca manual do operador fica até a próxima
+   * parte. Nada acontece se a integração/auto estiver desligada ou sem cena casada.
+   */
+  private followMeetingScene(): void {
+    const parts = this.meeting.getState().parts;
+    const running = parts.find((p) => p.running) ?? null;
+    const id = running?.id ?? null;
+    if (id && id !== this.lastRunningPartId) {
+      const obs = this.settings.obs;
+      const scene = resolveScene(running!, obs);
+      if (obs.enabled && obs.autoSwitch && scene) {
+        void this.obs.setScene(scene).catch((err) =>
+          this.logger.warn({ err: String(err), scene }, "OBS: troca automática de cena falhou"),
+        );
+      }
+    }
+    this.lastRunningPartId = id;
   }
 
   /** Locate share-picker.ps1 (packaged at base dir, or scripts/win in dev). */
@@ -236,6 +275,7 @@ export class AppContext {
       capabilities: this.zoom.getCapabilities(),
       meeting: this.meeting.getState(),
       meetingNames: this.programmes.mainAssignments(),
+      obs: this.obs.getStatus(),
       settings: this.settings,
       attendance: this.recordedAttendance(),
     };
@@ -245,6 +285,8 @@ export class AppContext {
   async bootstrap(): Promise<void> {
     this.attendanceSync.start();
     this.mapasjwPairing.start();
+    // Conecta ao OBS se a integração estiver ligada (não-fatal; reconecta sozinho).
+    this.obs.start();
 
     // Presentation monitor (Windows only; no-op elsewhere).
     this.presentation.start(this.settings.share.projectorDisplayId);
@@ -330,6 +372,7 @@ export class AppContext {
     this.mapasjwPairing.stop();
     this.cloudflare.close();
     this.presentation.stop();
+    await this.obs.shutdown();
     await this.zoom.shutdown();
     this.db.close();
   }

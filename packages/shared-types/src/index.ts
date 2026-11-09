@@ -124,6 +124,28 @@ export const PresentationStatusSchema = z.object({
 export type PresentationStatus = z.infer<typeof PresentationStatusSchema>;
 
 // ---------------------------------------------------------------------------
+// OBS Studio (produção de vídeo → câmera virtual do Zoom)
+//
+// O app é o controle remoto do OBS via obs-websocket. Ele troca a cena (corte
+// de câmera) automaticamente ao iniciar o cronômetro de uma parte, seguindo um
+// mapa configurável, e o operador pode trocar na mão a qualquer momento.
+// ---------------------------------------------------------------------------
+export const ObsStatusSchema = z.object({
+  /** O operador ligou a integração com o OBS nas configurações. */
+  enabled: z.boolean(),
+  connected: z.boolean(),
+  /** Cena em exibição no OBS; null quando desconectado/desconhecido. */
+  currentScene: z.string().nullable(),
+  /** Lista real de cenas do OBS (fonte dos botões e dos seletores). */
+  scenes: z.array(z.string()),
+  /** Câmera virtual do OBS: true ligada, false desligada, null desconhecida. */
+  virtualCam: z.boolean().nullable(),
+  lastError: z.string().nullable(),
+  updatedAt: z.string().datetime(),
+});
+export type ObsStatus = z.infer<typeof ObsStatusSchema>;
+
+// ---------------------------------------------------------------------------
 // Share
 // ---------------------------------------------------------------------------
 export const ShareModeSchema = z.enum(["manual", "assisted", "automatic"]);
@@ -156,6 +178,9 @@ export const MeetingPartSchema = z.object({
   baseElapsedSec: z.number().nonnegative().default(0),
   /** Where the part came from: parsed from WOL or added by the operator. */
   source: z.enum(["wol", "manual"]).default("wol"),
+  /** Cena do OBS específica desta parte NESTA reunião (vence o mapa padrão).
+   *  Para o proferimento feito em local diferente. null = usar o mapa. Zera ao recarregar. */
+  sceneOverride: z.string().nullable().default(null),
 });
 export type MeetingPart = z.infer<typeof MeetingPartSchema>;
 
@@ -282,6 +307,30 @@ export const SettingsSchema = z.object({
       warnSeconds: z.number().int().nonnegative().default(60),
     })
     .default({}),
+  obs: z
+    .object({
+      /** Ligar a integração com o OBS (conectar e permitir troca de cenas). */
+      enabled: z.boolean().default(false),
+      /** URL do obs-websocket (OBS 28+: Ferramentas → Configurações do Servidor WebSocket). */
+      url: z.string().default("ws://127.0.0.1:4455"),
+      password: z.string().default(""),
+      /** Trocar a cena automaticamente ao INICIAR o cronômetro de uma parte. */
+      autoSwitch: z.boolean().default(true),
+      /** Cena usada quando nenhuma regra casa com a parte. Vazio = não trocar. */
+      defaultScene: z.string().default(""),
+      /** Mapa padrão parte→cena: a PRIMEIRA regra cujo `match` aparece no texto
+       *  "seção + título" da parte (sem distinção de maiúsculas) define a cena. */
+      rules: z
+        .array(
+          z.object({
+            id: z.string(),
+            match: z.string(),
+            scene: z.string(),
+          }),
+        )
+        .default([]),
+    })
+    .default({}),
   retention: z
     .object({
       eventDays: z.number().int().positive().default(30),
@@ -289,6 +338,41 @@ export const SettingsSchema = z.object({
     .default({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
+export type ObsSettings = Settings["obs"];
+export type ObsSceneRule = ObsSettings["rules"][number];
+
+/** O mínimo de uma parte que o resolvedor de cena precisa (puro, sem relógio/DOM). */
+export interface ScenePart {
+  section: string;
+  title: string;
+  /** Override por reunião (vence o mapa). */
+  sceneOverride?: string | null;
+}
+
+/**
+ * Resolve a cena do OBS para uma parte, nesta ordem:
+ *   1. override da parte (local diferente nesta reunião),
+ *   2. primeira regra cujo `match` aparece em "seção + título" (sem maiúsculas),
+ *   3. cena padrão (fallback),
+ *   4. null — nenhuma cena; o chamador não deve trocar.
+ * Regras com `match` ou `scene` em branco são ignoradas. Compartilhado entre o
+ * servidor (automação) e o painel (mostrar a cena que o "automático" escolheria).
+ */
+export function resolveScene(
+  part: ScenePart,
+  obs: Pick<ObsSettings, "rules" | "defaultScene">,
+): string | null {
+  const override = part.sceneOverride?.trim();
+  if (override) return override;
+  const hay = `${part.section} ${part.title}`.toLowerCase();
+  for (const rule of obs.rules) {
+    const needle = rule.match.trim().toLowerCase();
+    const scene = rule.scene.trim();
+    if (needle && scene && hay.includes(needle)) return scene;
+  }
+  const fallback = obs.defaultScene?.trim();
+  return fallback ? fallback : null;
+}
 
 /** Deliberately excludes Zoom, participants, settings and credentials. */
 export type TimerRoom = 'main' | 'b';
@@ -314,7 +398,9 @@ export interface RemoteTimerState { meeting: MeetingSchedule; warnSeconds: numbe
   /** false no fim de semana: a Sala B só existe na reunião de meio de semana (o estado da sala B vem sem partes). */
   roomBAvailable?: boolean;
   /** Presente apenas para aparelhos com o papel `painel`. */
-  painel?: RemotePainel; }
+  painel?: RemotePainel;
+  /** Estado do OBS (cenas, cena atual). Só acompanha a Sala principal. */
+  obs?: ObsStatus; }
 export interface RemoteIntegrationStatus {
   bundled: boolean; version: string; authorized: boolean; phase: string; enabled: boolean;
   configured: boolean; publicUrl: string; authorizationUrl: string | null; busy: boolean; error: string | null; publicReady:boolean;
@@ -348,6 +434,8 @@ export const EventTypeSchema = z.enum([
   "presentation.ended",
   "meeting.loaded",
   "meeting.updated",
+  "obs.state.changed",
+  "obs.scene.switched",
   "system.warning",
   "system.error",
 ]);
@@ -382,6 +470,7 @@ export const SnapshotSchema = z.object({
   capabilities: CapabilitiesSchema,
   meeting: MeetingScheduleSchema,
   meetingNames: z.record(z.object({name:z.string(),secondName:z.string()})).optional(),
+  obs: ObsStatusSchema,
   settings: SettingsSchema,
   /** Assistência de HOJE; null quando nada foi registrado no dia (nem presencial, nem Zoom). */
   attendance: AttendanceSummarySchema.nullable().optional(),

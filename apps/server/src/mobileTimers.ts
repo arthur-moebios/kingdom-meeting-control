@@ -63,7 +63,7 @@ export class MobileTimers {
     const roomB=this.roomBAvailable(),noRoomB=room==='b' && !roomB;
     // Fim de semana: nenhuma parte da Sala B sai do servidor (o cliente mostra o aviso).
     const source:RemoteTimerState=this.ctx.programmes?this.ctx.programmes.state(noRoomB?'main':room):{meeting:this.ctx.meeting.getState(),warnSeconds:this.ctx.getSettings().meetingSchedule.warnSeconds,serverNow:new Date().toISOString()};
-    const base:RemoteTimerState=noRoomB?{...source,room:'b',meeting:{...source.meeting,parts:[],activePartId:null},details:undefined,period:undefined}:source;
+    const base:RemoteTimerState={...(noRoomB?{...source,room:'b',meeting:{...source.meeting,parts:[],activePartId:null},details:undefined,period:undefined}:source),obs:this.ctx.obs.getStatus()};
     if(!req)return base;
     const out:RemoteTimerState={...base,access:this.accessFor(req),canWrite:this.canWrite(req,room),roomBAvailable:roomB};
     // Filtragem por conexão: sem o papel `painel`, nomes/anúncios/assistência nem entram no payload.
@@ -135,8 +135,21 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     else if(action==='pause')meeting.pause(id);
     else if(action==='pause-next')meeting.pauseAndAdvance(id);
     else if(action==='reset')meeting.reset(id);
+    else if(action==='scene'){const scene=(req.body as {scene?:unknown})?.scene;meeting.setSceneOverride(id,typeof scene==='string'?scene:null);}
     else return reply.code(404).send({error:'not_found'});
     return service.state(room,req);
+  });
+  // OBS: troca manual de cena e câmera virtual (só quem escreve na Sala principal).
+  app.post('/remote-api/obs/scene',{preHandler:commandAuth,bodyLimit:1024},async(req,reply)=> {
+    const scene=(req.body as {scene?:unknown})?.scene;
+    if(typeof scene!=='string' || !scene.trim())return reply.code(400).send({error:'invalid_scene'});
+    try{await ctx.obs.setScene(scene.trim());}catch(error){return reply.code(409).send({error:'obs_unavailable',message:String(error)});}
+    return service.state(roomOf(req),req);
+  });
+  app.post('/remote-api/obs/virtualcam',{preHandler:commandAuth,bodyLimit:1024},async(req,reply)=> {
+    const on=(req.body as {on?:unknown})?.on;
+    try{await ctx.obs.setVirtualCam(typeof on==='boolean'?on:undefined);}catch(error){return reply.code(409).send({error:'obs_unavailable',message:String(error)});}
+    return service.state(roomOf(req),req);
   });
   app.get('/remote-api/programmes',{preHandler:auth},async()=>ctx.programmes?.list() ?? []);
   app.post('/remote-api/programmes/import',{onRequest:commandAuth,bodyLimit:11_000_000},async(req)=> {
@@ -164,7 +177,7 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     const client={req,room};clients.set(socket,client);send(socket,client);socket.on('close',()=>clients.delete(socket));socket.on('error',()=>clients.delete(socket));
   });
   const push=(room:TimerRoom)=>{if(ctx.programmes?.isUpdating(room))return;for(const [socket,client] of clients)if(client.room===room)send(socket,client);};
-  const off=ctx.bus.subscribe(event=> {if(event.type.startsWith('meeting.'))push('main');});
+  const off=ctx.bus.subscribe(event=> {if(event.type.startsWith('meeting.') || event.type.startsWith('obs.'))push('main');});
   const offPrivate=ctx.programmes?.subscribe(push);
   const heartbeat=setInterval(()=> {for(const [socket,client] of clients)send(socket,client);},1000);heartbeat.unref();
   app.addHook('onClose',async()=> {clearInterval(heartbeat);off();offPrivate?.();for(const socket of clients.keys())socket.close(1001,'shutdown');});

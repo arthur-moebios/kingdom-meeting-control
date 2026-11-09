@@ -144,7 +144,8 @@ function WebApp() {
         <>
           <div className="grid">
             <div className="col-main">
-              <div className="operator-timer"><MeetingPanel compact={compact} meeting={s.meeting} names={s.meetingNames} warnSeconds={s.settings.meetingSchedule.warnSeconds} /></div>
+              <div className="operator-timer"><MeetingPanel compact={compact} meeting={s.meeting} names={s.meetingNames} warnSeconds={s.settings.meetingSchedule.warnSeconds}
+                obs={s.obs.enabled ? { names: s.obs.scenes, map: { rules: s.settings.obs.rules, defaultScene: s.settings.obs.defaultScene } } : undefined} /></div>
               {compact && <PanelDivider horizontal label="Altura do cronômetro e assistência" value={timerHeight} onChange={n => {setTimerHeight(n);remember('kmc.operator.timerHeight',n);}} />}
               <div className="operator-lower operator-attendance"><EnquetesCard busy={busy} run={run} lastEvent={lastEvent} /></div>
             </div>
@@ -152,6 +153,7 @@ function WebApp() {
             <div className="col-side">
               {status?.backend==='native' && <HostCameraSlot />}
               <div className="operator-quicktools"><TransmissaoCard s={s} busy={busy} run={run} /></div>
+              {s.obs.enabled && <div className="operator-quicktools"><ScenesCard s={s} busy={busy} run={run} /></div>}
               {compact && <nav className="operator-tabs" aria-label="Ferramentas">
                 {[['people','Participantes'],['announcements','Anúncios'],['remote','Celular'],['advanced','Mais']].map(([id,label]) => <button key={id} className={toolTab===id?'':'secondary'} aria-pressed={toolTab===id} onClick={() => setToolTab(id!)}>{label}</button>)}
               </nav>}
@@ -231,6 +233,62 @@ function TransmissaoCard({ s, busy, run }: { s: Snapshot; busy: string | null; r
         </button>
         <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("poll", () => api.launchPoll())} title="Lança a enquete pré-criada no Zoom">📊 Lançar enquete</button>
         <button className="btn secondary small" disabled={!!busy || !inMeeting} onClick={() => run("host", () => api.reclaimHost())} title="Reassume o papel de host se outro dispositivo pegou">👑 Reassumir host</button>
+      </div>
+    </Card>
+  );
+}
+
+/* ----------------------------------------------------- Cenas (OBS Studio) */
+function ScenesCard({ s, busy, run }: { s: Snapshot; busy: string | null; run: RunNamed }) {
+  const obs = s.obs;
+  const auto = s.settings.obs.autoSwitch;
+  const connText = obs.connected ? "Conectado" : obs.lastError ? "Sem OBS" : "Conectando…";
+  const connDot = obs.connected ? "#22c55e" : obs.lastError ? "#ef4444" : "#f59e0b";
+  return (
+    <Card
+      icon="🎬"
+      title="Cenas (OBS)"
+      className="scenes"
+      trailing={<span className="statuschip"><span className="dot" style={{ background: connDot }} /><span>{connText}</span></span>}
+    >
+      {!obs.connected ? (
+        <div className="scene-offline">
+          <p className="muted small">{obs.lastError ? `OBS: ${obs.lastError}` : "Procurando o OBS na rede local…"}</p>
+          <button className="btn secondary small" disabled={!!busy} onClick={() => run("obsreconn", () => api.obsReconnect())}>Reconectar</button>
+        </div>
+      ) : obs.scenes.length === 0 ? (
+        <p className="muted small">O OBS está conectado, mas não tem cenas. Crie as cenas no OBS primeiro.</p>
+      ) : (
+        <div className="scene-grid">
+          {obs.scenes.map((name) => (
+            <button
+              key={name}
+              className={`scene-btn ${name === obs.currentScene ? "active" : ""}`}
+              disabled={!!busy}
+              onClick={() => run("obsscene", () => api.obsScene(name))}
+              title={`Cortar para a cena ${name}`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="scene-foot">
+        <label className="scene-auto" title="Ao iniciar o cronômetro de uma parte, o app corta para a cena mapeada.">
+          <input
+            type="checkbox"
+            checked={auto}
+            disabled={!!busy}
+            onChange={(e) => run("obsauto", () => api.putSettings({ obs: { ...s.settings.obs, autoSwitch: e.target.checked } }))}
+          />
+          Trocar de cena automaticamente ao iniciar a parte
+        </label>
+        <div className="scene-vc">
+          <MiniStat label="Câmera virtual" on={obs.virtualCam} yes="ligada" no="desligada" />
+          <button className="btn secondary small" disabled={!!busy || !obs.connected} onClick={() => run("obsvc", () => api.obsVirtualCam(!obs.virtualCam))}>
+            {obs.virtualCam ? "Desligar" : "Ligar"}
+          </button>
+        </div>
       </div>
     </Card>
   );

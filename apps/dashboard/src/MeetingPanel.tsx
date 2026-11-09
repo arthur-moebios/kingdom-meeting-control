@@ -1,9 +1,13 @@
 import { useState } from "react";
-import type { MeetingPart, MeetingSchedule, TimerNames } from "@kmc/shared-types";
+import type { MeetingPart, MeetingSchedule, ObsSettings, TimerNames } from "@kmc/shared-types";
+import { resolveScene } from "@kmc/shared-types";
 import { api } from "./api.js";
 import { useClock, elapsedSec, fmtClock, parseClock } from "./timer.js";
 
 type RunFn = () => Promise<unknown>;
+
+/** Cenas do OBS para o seletor por parte; `map` resolve o que o "automático" escolheria. */
+export interface ObsSceneChoice { names: string[]; map: Pick<ObsSettings, "rules" | "defaultScene"> }
 
 /** Visual state of a part's remaining time. */
 function phase(remaining: number, allotted: number, warnSeconds: number): "idle" | "ok" | "warn" | "over" {
@@ -13,7 +17,7 @@ function phase(remaining: number, allotted: number, warnSeconds: number): "idle"
   return "ok";
 }
 
-export function MeetingPanel({ meeting, names, warnSeconds, compact = false }: { meeting: MeetingSchedule; names?:Record<string,TimerNames>; warnSeconds: number; compact?: boolean }) {
+export function MeetingPanel({ meeting, names, warnSeconds, compact = false, obs }: { meeting: MeetingSchedule; names?:Record<string,TimerNames>; warnSeconds: number; compact?: boolean; obs?: ObsSceneChoice }) {
   const anyRunning = meeting.parts.some((p) => p.running);
   const now = useClock(anyRunning);
   const [busy, setBusy] = useState(false);
@@ -116,6 +120,7 @@ export function MeetingPanel({ meeting, names, warnSeconds, compact = false }: {
                     <button className="danger" disabled={busy} onClick={() => run(() => api.meetingRemovePart(p.id))}>✕</button>
                   )}
                 </span>
+                {obs && <ScenePicker part={p} obs={obs} busy={busy} run={run} />}
                 {adjustId === p.id && (
                   <AdjustEditor part={p} now={now} busy={busy} run={run} onDone={() => setAdjustId(null)} />
                 )}
@@ -228,6 +233,28 @@ function AdjustEditor({
       </label>
       <button disabled={busy} onClick={() => void apply()}>Aplicar</button>
       <button className="secondary" disabled={busy} onClick={onDone}>Cancelar</button>
+    </div>
+  );
+}
+
+/** Cena do OBS desta parte NESTA reunião: "Automático" segue o mapa; escolher fixa. */
+function ScenePicker({ part, obs, busy, run }: { part: MeetingPart; obs: ObsSceneChoice; busy: boolean; run: (fn: RunFn) => Promise<void> }) {
+  const auto = resolveScene({ section: part.section, title: part.title }, obs.map);
+  return (
+    <div className="m-scene-row">
+      <span className="m-scene-label" title="Cena do OBS ao iniciar esta parte">🎬 Cena</span>
+      <select
+        className="m-scene-sel"
+        value={part.sceneOverride ?? ""}
+        disabled={busy}
+        onChange={(e) => run(() => api.meetingSceneOverride(part.id, e.target.value || null))}
+      >
+        <option value="">Automático{auto ? `: ${auto}` : " (sem cena)"}</option>
+        {obs.names.map((n) => (
+          <option key={n} value={n}>{n}</option>
+        ))}
+      </select>
+      {part.sceneOverride && <span className="m-scene-fixed small">fixa nesta reunião</span>}
     </div>
   );
 }

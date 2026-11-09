@@ -104,6 +104,7 @@ export class MeetingService {
       startedAt: null,
       baseElapsedSec: 0,
       source,
+      sceneOverride: null,
     };
   }
 
@@ -240,6 +241,13 @@ export class MeetingService {
   setTitle(id: string, title: string): MeetingSchedule {
     const p = this.part(id);
     if (p) p.title = title;
+    return this.changed();
+  }
+
+  /** Cena do OBS para esta parte nesta reunião (vence o mapa padrão); null limpa. */
+  setSceneOverride(id: string, scene: string | null): MeetingSchedule {
+    const p = this.part(id);
+    if (p) p.sceneOverride = scene && scene.trim() ? scene.trim() : null;
     return this.changed();
   }
 

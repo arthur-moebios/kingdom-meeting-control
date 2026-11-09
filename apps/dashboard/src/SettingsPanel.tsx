@@ -1,8 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { Display, Settings } from "@kmc/shared-types";
+import type { Display, ObsSceneRule, Settings } from "@kmc/shared-types";
 import { api } from "./api.js";
 import { CloudflarePanel } from './CloudflarePanel.js';
 import { MapasJwPanel } from './MapasJwPanel.js';
+
+/** Sugestões de palavra-chave para o mapa parte→cena (a cena fica a cargo do operador). */
+const SUGESTOES_REGRAS = ["Discurso", "Sentinela", "Leitura da Bíblia", "Tesouros", "Joias", "Estudo bíblico", "Necessidades"];
 
 interface Props {
   native?: boolean;
@@ -22,12 +25,15 @@ export function SettingsPanel({ displays, onClose, onSaved, native = false }: Pr
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Nomes de cena reais do OBS, para oferecer dropdowns em vez de texto livre. */
+  const [obsScenes, setObsScenes] = useState<string[]>([]);
 
   useEffect(() => {
     api
       .getSettings()
       .then(setForm)
       .catch((e) => setLoadErr(String(e)));
+    api.obsStatus().then((o) => setObsScenes(o.scenes)).catch(() => void 0);
   }, []);
 
   if (loadErr) {
@@ -58,6 +64,9 @@ export function SettingsPanel({ displays, onClose, onSaved, native = false }: Pr
     setForm((f) => (f ? { ...f, automations: { ...f.automations, ...patch } } : f));
   const setBrowser = (patch: Partial<Settings["browser"]>) =>
     setForm((f) => (f ? { ...f, browser: { ...f.browser, ...patch } } : f));
+  const setObs = (patch: Partial<Settings["obs"]>) =>
+    setForm((f) => (f ? { ...f, obs: { ...f.obs, ...patch } } : f));
+  const setRules = (rules: ObsSceneRule[]) => setObs({ rules });
 
   const save = async () => {
     setBusy(true);
@@ -181,6 +190,53 @@ export function SettingsPanel({ displays, onClose, onSaved, native = false }: Pr
         </fieldset>
 
         <fieldset>
+          <legend>OBS Studio (cenas → câmera virtual)</legend>
+          <Check label="Ligar a integração com o OBS" checked={form.obs.enabled} onChange={(v) => setObs({ enabled: v })} />
+          <Field label="Endereço (obs-websocket)">
+            <input value={form.obs.url} onChange={(e) => setObs({ url: e.target.value })} placeholder="ws://127.0.0.1:4455" />
+          </Field>
+          <Field label="Senha do WebSocket">
+            <input type="password" value={form.obs.password} onChange={(e) => setObs({ password: e.target.value })} placeholder="(OBS: Ferramentas → Servidor WebSocket)" />
+          </Field>
+          <Check label="Trocar de cena automaticamente ao iniciar a parte" checked={form.obs.autoSwitch} onChange={(v) => setObs({ autoSwitch: v })} />
+          <Field label="Cena padrão (fallback)">
+            <SceneField value={form.obs.defaultScene} scenes={obsScenes} onChange={(v) => setObs({ defaultScene: v })} placeholder="(nenhuma — não troca)" />
+          </Field>
+          <p className="muted small">
+            Mapa padrão parte→cena: ao iniciar o cronômetro, a <b>primeira</b> regra cujo trecho aparece
+            no título/seção da parte define a cena. O operador pode trocar na mão, e cada parte pode ter
+            uma cena fixa só nesta reunião (no cronômetro, para o proferimento em local diferente).
+          </p>
+          <div className="obs-rules">
+            {form.obs.rules.map((r, i) => (
+              <div className="obs-rule" key={r.id}>
+                <input
+                  className="obs-rule-match"
+                  value={r.match}
+                  placeholder="trecho do título (ex.: Discurso)"
+                  onChange={(e) => setRules(form.obs.rules.map((x, j) => (j === i ? { ...x, match: e.target.value } : x)))}
+                />
+                <span className="obs-rule-arrow">→</span>
+                <SceneField value={r.scene} scenes={obsScenes} onChange={(v) => setRules(form.obs.rules.map((x, j) => (j === i ? { ...x, scene: v } : x)))} placeholder="cena" />
+                <button type="button" className="secondary small" title="Remover regra" onClick={() => setRules(form.obs.rules.filter((_, j) => j !== i))}>✕</button>
+              </div>
+            ))}
+            <div className="obs-rules-actions">
+              <button type="button" className="secondary small" onClick={() => setRules([...form.obs.rules, { id: crypto.randomUUID(), match: "", scene: "" }])}>+ Regra</button>
+              {form.obs.rules.length === 0 && (
+                <button type="button" className="secondary small" onClick={() => setRules(SUGESTOES_REGRAS.map((m) => ({ id: crypto.randomUUID(), match: m, scene: "" })))}>
+                  Sugerir palavras-chave
+                </button>
+              )}
+            </div>
+          </div>
+          {form.obs.enabled && obsScenes.length === 0 && (
+            <p className="muted small warn-text">OBS não conectado agora — abra o OBS e ligue o Servidor WebSocket (OBS 28+). Você ainda pode digitar os nomes das cenas.</p>
+          )}
+          {!form.obs.enabled && <p className="muted small">Ative para o painel conectar ao OBS e mostrar o cartão de cenas.</p>}
+        </fieldset>
+
+        <fieldset>
           <legend>Reconexão</legend>
           <Check label="Reconexão habilitada" checked={rc.enabled} onChange={(v) => setReconnect({ enabled: v })} />
           <Field label="Máx. tentativas">
@@ -232,6 +288,22 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+
+/** Campo de cena: dropdown das cenas reais do OBS; texto livre quando o OBS está fechado. */
+function SceneField({ value, scenes, onChange, placeholder }: { value: string; scenes: string[]; onChange: (v: string) => void; placeholder?: string }) {
+  if (scenes.length === 0) {
+    return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />;
+  }
+  const options = value && !scenes.includes(value) ? [value, ...scenes] : scenes;
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{placeholder ?? "(nenhuma)"}</option>
+      {options.map((n) => (
+        <option key={n} value={n}>{n}</option>
+      ))}
+    </select>
   );
 }
 

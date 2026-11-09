@@ -33,6 +33,9 @@ export const roomApi=(room:TimerRoom)=> {
     prepareB:()=>request<RemoteTimerState>('room-b/prepare',{}),
     details:(details:TimerDetails,partIds:string[])=>request<RemoteTimerState>('details'+query,{...details,partIds}),
     finishB:()=>request<RemoteTimerState>('room-b/finish',{}),
+    obsScene:(scene:string)=>request<RemoteTimerState>('obs/scene'+query,{scene}),
+    obsVirtualCam:(on?:boolean)=>request<RemoteTimerState>('obs/virtualcam'+query,on===undefined?{}:{on}),
+    sceneOverride:(id:string,scene:string|null)=>request<RemoteTimerState>('part/'+encodeURIComponent(id)+'/scene'+query,{scene}),
   };
 };
 export function useRemoteTimers(revision: number,room:TimerRoom='main') {

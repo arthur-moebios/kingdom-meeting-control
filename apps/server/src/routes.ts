@@ -334,6 +334,45 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.post("/api/v1/meeting/reset-all", admin, async () => ctx.meeting.resetAll());
 
+  // Cena do OBS específica desta parte nesta reunião (vence o mapa padrão).
+  app.post("/api/v1/meeting/part/:id/scene", admin, async (req) => {
+    const scene = (req.body as { scene?: unknown } | null)?.scene;
+    return ctx.meeting.setSceneOverride((req.params as { id: string }).id, typeof scene === "string" ? scene : null);
+  });
+
+  // -- OBS Studio (cenas → câmera virtual do Zoom) ---------------------------
+  app.get("/api/v1/obs/status", viewer, async () => ctx.obs.getStatus());
+
+  app.post("/api/v1/obs/scene", admin, async (req, reply) => {
+    const scene = (req.body as { scene?: unknown } | null)?.scene;
+    if (typeof scene !== "string" || !scene.trim()) {
+      return reply.code(400).send({ error: "invalid_scene", message: "Informe o nome da cena." });
+    }
+    ctx.db.audit("admin", "obs.scene", { scene: scene.trim() });
+    try {
+      await ctx.obs.setScene(scene.trim());
+      return ctx.obs.getStatus();
+    } catch (err) {
+      return reply.code(409).send({ error: "obs_unavailable", message: String(err) });
+    }
+  });
+
+  app.post("/api/v1/obs/virtualcam", admin, async (req, reply) => {
+    const on = (req.body as { on?: unknown } | null)?.on;
+    ctx.db.audit("admin", "obs.virtualcam", { on: typeof on === "boolean" ? on : "toggle" });
+    try {
+      await ctx.obs.setVirtualCam(typeof on === "boolean" ? on : undefined);
+      return ctx.obs.getStatus();
+    } catch (err) {
+      return reply.code(409).send({ error: "obs_unavailable", message: String(err) });
+    }
+  });
+
+  app.post("/api/v1/obs/reconnect", admin, async () => {
+    ctx.obs.reconnect();
+    return ctx.obs.getStatus();
+  });
+
   // -- settings --------------------------------------------------------------
   app.get("/api/v1/update/status", viewer, async () => ctx.getUpdateStatus() ?? ctx.checkForUpdate());
   app.post("/api/v1/update/check", admin, async () => ctx.checkForUpdate());

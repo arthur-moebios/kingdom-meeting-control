@@ -19,6 +19,7 @@
     "@kmc/zoom-web-adapter": "*",
     "bonjour-service": "^1.4.4",
     "fastify": "^5.2.0",
+    "obs-websocket-js": "^5.0.6",
     "pino": "^9.5.0",
     "zod": "^3.24.1"
   }

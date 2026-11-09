@@ -12,6 +12,11 @@ e permite revogar aparelhos. Inclui Sala B independente, importação automátic
 de datas e nomes e compartilhamento direto de imagem. Veja [Cloudflare e PWA](docs/cloudflare-mobile-pwa.md)
 para autorizar a conta, configurar o domínio e instalar no celular.
 
+**Cenas do OBS:** o painel e o PWA controlam as cenas do OBS Studio (via
+obs-websocket) e trocam de cena automaticamente ao iniciar o cronômetro de cada
+parte, por um mapa configurável — com override por reunião e corte manual. Veja
+[Cenas do OBS](docs/obs-cenas.md).
+
 ## Documentação histórica do backend web
 
 O pacote publicado usa o backend nativo. A implementação web original permanece

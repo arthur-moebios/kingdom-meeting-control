@@ -32,7 +32,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return (await res.json()) as T;
 }
 
-import type { DeviceAccess, MeetingKind, MeetingSchedule, PollResult, Settings, SettingsUpdate, RemoteIntegrationStatus, UpdateStatus, UpdateApplyResult } from "@kmc/shared-types";
+import type { DeviceAccess, MeetingKind, MeetingSchedule, ObsStatus, PollResult, Settings, SettingsUpdate, RemoteIntegrationStatus, UpdateStatus, UpdateApplyResult } from "@kmc/shared-types";
 
 export interface MapasJwPairStatus {
   estado: 'nenhum' | 'pendente' | 'expirada' | 'recusada' | 'perdida' | 'erro';
@@ -104,4 +104,12 @@ export const api = {
     req<MeetingSchedule>("POST", "/meeting/part", body),
   meetingRemovePart: (id: string) => req<MeetingSchedule>("DELETE", `/meeting/part/${id}`),
   meetingResetAll: () => req<MeetingSchedule>("POST", "/meeting/reset-all"),
+  meetingSceneOverride: (id: string, scene: string | null) =>
+    req<MeetingSchedule>("POST", `/meeting/part/${id}/scene`, { scene }),
+
+  // -- OBS Studio (cenas → câmera virtual do Zoom) --
+  obsStatus: () => req<ObsStatus>("GET", "/obs/status"),
+  obsScene: (scene: string) => req<ObsStatus>("POST", "/obs/scene", { scene }),
+  obsVirtualCam: (on?: boolean) => req<ObsStatus>("POST", "/obs/virtualcam", on === undefined ? {} : { on }),
+  obsReconnect: () => req<ObsStatus>("POST", "/obs/reconnect"),
 };

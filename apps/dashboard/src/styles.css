@@ -454,3 +454,47 @@ legend { color: var(--accent); font-size: 13px; padding: 0 6px; font-weight: 600
 .rc-wrap { white-space: normal; max-width: none; }
 .rc-row-plain { grid-template-columns: 1fr auto; }
 .remote-painel { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+
+/* ------------------------------------------------- OBS: cenas e mapa parte→cena */
+/* Cartão de cenas (painel do operador) */
+.scenes .scene-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.scene-btn { background: var(--cardAlt); color: var(--fg); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 8px; font-weight: 600; font-size: 13px; text-align: center; white-space: normal; line-height: 1.2; }
+.scene-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.scene-offline { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.scene-foot { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.scene-auto { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.scene-vc { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.operator-layout .scene-btn { padding: 7px 6px; font-size: 11px; }
+
+/* Seletor de cena por parte (dentro do cronômetro) */
+.m-scene-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.m-scene-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.m-scene-sel { flex: 1; min-width: 140px; max-width: 280px; }
+.m-scene-fixed { color: var(--accent); font-weight: 600; }
+.operator-layout .m-scene-row { margin-top: 4px; padding-top: 6px; }
+.operator-layout .m-scene-label, .operator-layout .m-scene-sel { font-size: 11px; }
+
+/* Editor de regras (configurações) */
+.obs-rules { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.obs-rule { display: grid; grid-template-columns: 1fr auto 1fr auto; align-items: center; gap: 8px; }
+.obs-rule-arrow { color: var(--muted); }
+.obs-rule input, .obs-rule select { width: 100%; }
+.obs-rules-actions { display: flex; gap: 8px; }
+
+/* Cartão de cenas no celular (PWA) */
+.rc-scenes { border: 1px solid var(--border); border-radius: 14px; background: var(--card); padding: 12px; margin-bottom: 14px; }
+.rc-scenes-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.rc-scene-conn { font-size: 12px; font-weight: 600; color: var(--muted); }
+.rc-scene-conn.on { color: #22c55e; }
+.rc-scene-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.rc-scene-btn { background: var(--cardAlt); color: var(--fg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 8px; font-weight: 600; font-size: 14px; white-space: normal; line-height: 1.2; }
+.rc-scene-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.rc-scene-vc { margin-top: 10px; width: 100%; }
+
+@media (max-width: 640px) {
+  .obs-rule { grid-template-columns: 1fr auto; grid-auto-rows: auto; }
+  .obs-rule-arrow { display: none; }
+}

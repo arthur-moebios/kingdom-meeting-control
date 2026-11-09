@@ -22,6 +22,7 @@ async function setup(options:{now?:Date;kind?:'weekend'|'midweek'|null}={}) {
     meeting:{getState:()=>meeting,start,pause:vi.fn(),pauseAndAdvance:vi.fn(),reset:vi.fn(),setActive:vi.fn()},
     bus:{subscribe:()=>()=>{}},
     zoom:{getRaisedHands:()=>({order:[HAND],orderSource:'detection-time',partial:true})},
+    obs:{getStatus:()=>({enabled:false,connected:false,currentScene:null,scenes:[],virtualCam:null,lastError:null,updatedAt:'2026-11-04T00:00:00.000Z'}),setScene:vi.fn(),setVirtualCam:vi.fn()},
     recordedAttendance:()=>({date:'2026-11-04',zoom:3,presencial:40,total:43}),
   } as unknown as AppContext;
   (ctx as {mobile:MobileTimers}).mobile=new MobileTimers(ctx,()=>options.now??WEDNESDAY);
@@ -45,7 +46,7 @@ it('public gateway never exposes operator pages, snapshots, settings or Zoom con
 it('paired clients receive only timers and may issue only allowed timer commands',async()=> {
   const {app,pair,headers,start,kv,ctx}=await setup();const {cookie}=await pair();
   const response=await app.inject({url:'/remote-api/state',headers:{...headers,cookie}});
-  expect(response.statusCode).toBe(200);expect(Object.keys(response.json()).sort()).toEqual(['access','canWrite','meeting','roomBAvailable','serverNow','warnSeconds']);
+  expect(response.statusCode).toBe(200);expect(Object.keys(response.json()).sort()).toEqual(['access','canWrite','meeting','obs','roomBAvailable','serverNow','warnSeconds']);
   expect(response.json()).toMatchObject({access:'readonly',canWrite:false});
   ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'both');
   expect(response.body).not.toContain('must-not-be-public');expect(response.body).not.toContain('private');
