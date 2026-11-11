@@ -4,6 +4,11 @@ import type { ImportedProgramme, ProgrammePart } from '@kmc/shared-types';
 export const MINISTRY='FAÇA SEU MELHOR NO MINISTÉRIO';
 export const normalize=(value:string)=>value.normalize('NFD').replace(/\p{M}/gu,'').toUpperCase().replace(/\s+/g,' ').trim();
 export const isMinistry=(value:string)=>normalize(value)===normalize(MINISTRY);
+export const TREASURES='TESOUROS DA PALAVRA DE DEUS';
+/** A Leitura da Bíblia (em "Tesouros da Palavra de Deus") também acontece na Sala B, ao lado das partes do ministério. */
+export const isBibleReading=(part:{section:string;title:string})=>normalize(part.section)===normalize(TREASURES) && normalize(part.title).startsWith('LEITURA DA BIBLIA');
+/** Partes que a Sala B pode ter: a Leitura da Bíblia e Faça Seu Melhor no Ministério. */
+export const isRoomBPart=(part:{section:string;title:string})=>isMinistry(part.section) || isBibleReading(part);
 const months=['janeiro','fevereiro','marco','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const names=(value:string)=> {const parts=value.trim().split(/\s+\/\s+/);return {name:(parts[0] || '').slice(0,160),secondName:parts.slice(1).join(' / ').slice(0,160)};};
 
@@ -51,7 +56,7 @@ export function parseProgrammePages(pages:string[],sourceFile:string):ImportedPr
     if(kind==='weekend'){weekendLines.push(line);continue;}
     const leader=line.match(/Dirigente\s*\(Sala B\)\s+(.+)$/i);if(leader)programme.conductorB=leader[1]!.trim().slice(0,160);
     const heading=normalize(line);
-    if(['TESOUROS DA PALAVRA DE DEUS',normalize(MINISTRY),'NOSSA VIDA CRISTA'].includes(heading)) {section=isMinistry(line)?MINISTRY:line;last=null;continue;}
+    if([TREASURES,normalize(MINISTRY),'NOSSA VIDA CRISTA'].includes(heading)) {section=isMinistry(line)?MINISTRY:line;last=null;continue;}
     const part=line.match(/^(\d+)\.\s+(.+?)\s*\((\d+)\s*min\)\s*(.*)$/i);
     if(part) {
       const label=part[4]!.replace(/^Salão Principal\s*/i,'');
@@ -59,7 +64,7 @@ export function parseProgrammePages(pages:string[],sourceFile:string):ImportedPr
       programme.mainParts.push(last);continue;
     }
     const room=line.match(/^Sala B\s+(.+)$/i);
-    if(room && last && isMinistry(last.section))programme.roomBParts.push({...last,...names(room[1]!)});
+    if(room && last && isRoomBPart(last))programme.roomBParts.push({...last,...names(room[1]!)});
   }
   finishWeekend();
   if(!output.length)throw new Error('Nenhuma data de reunião reconhecida no PDF.');

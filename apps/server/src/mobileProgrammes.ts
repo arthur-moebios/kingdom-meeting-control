@@ -6,7 +6,7 @@ import { MeetingService } from '@kmc/meeting';
 import { repoRoot } from '@kmc/config';
 import type { ImportedProgramme, ProgrammePart, RemoteTimerState, TimerDetails, TimerRoom } from '@kmc/shared-types';
 import type { AppContext } from './context.js';
-import { MINISTRY, isMinistry, normalize, parseProgrammePages } from './programmeImport.js';
+import { MINISTRY, isRoomBPart, normalize, parseProgrammePages } from './programmeImport.js';
 import { dateWeek, meetingWeek, weekKey, weekLabel } from './meetingPeriod.js';
 
 const emptyDetails=():TimerDetails=>({assignments:{},conductor:'',helper:'',date:null});
@@ -146,7 +146,7 @@ export class MobileProgrammes {
       if(!Number.isInteger(seconds) || seconds<0 || seconds>14400)throw invalid('Duração inválida.');
       return {...part,title:clean(edit?.title ?? part.title),allottedSec:seconds,name:clean(edit?.name ?? part.name),secondName:clean(edit?.secondName ?? part.secondName)};
     });
-    if(input.room==='b' && parts.some(part=>!isMinistry(part.section)))throw invalid('Sala B aceita somente Faça Seu Melhor no Ministério.');
+    if(input.room==='b' && parts.some(part=>!isRoomBPart(part)))throw invalid('Sala B aceita somente a Leitura da Bíblia e Faça Seu Melhor no Ministério.');
     this.ctx.db.setKv('mobile.auto.'+input.room,this.today());
     this.updating.add(input.room);
     try {
@@ -159,8 +159,8 @@ export class MobileProgrammes {
     this.notify(input.room);return this.state(input.room);
   }
   prepareB() {
-    const source=this.ctx.meeting.getState();const parts=source.parts.filter(part=>isMinistry(part.section));
-    if(source.kind!=='midweek' || !parts.length)throw invalid('A reunião principal não tem partes do ministério para copiar.');
+    const source=this.ctx.meeting.getState();const parts=source.parts.filter(part=>isRoomBPart(part));
+    if(source.kind!=='midweek' || !parts.length)throw invalid('A reunião principal não tem a Leitura da Bíblia nem partes do ministério para copiar.');
     const mainDetails=this.details('main'),programme=this.library.find(p=>p.date===mainDetails.date && p.kind==='midweek' && p.roomBParts.length);
     if(programme)return this.load({room:'b',programmeId:programme.id,includeNames:true});
     this.roomB.replaceProgramme({weekLabel:source.weekLabel,title:MINISTRY,kind:'midweek',parts});

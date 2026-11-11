@@ -3,7 +3,7 @@ import { MeetingService } from '@kmc/meeting';
 import { SettingsSchema } from '@kmc/shared-types';
 import { MobileProgrammes } from './mobileProgrammes.js';
 import { MobileTimers, buildRemoteGateway } from './mobileTimers.js';
-import { MINISTRY, parseProgrammePages } from './programmeImport.js';
+import { MINISTRY, TREASURES, parseProgrammePages } from './programmeImport.js';
 import type { AppContext } from './context.js';
 import path from 'node:path';
 import type { Db } from './db.js';
@@ -38,18 +38,30 @@ function setup(options:{db?:Pick<Db,'getKv'|'setKv'>;seed?:boolean}={}) {
   if(options.seed!==false)ctx.programmes.store(parseProgrammePages([fixture],'fixture.pdf'));
   return {ctx,kv,globalEmit};
 }
-it('imports only explicitly assigned ministry parts for B, keeping names and dates distinct',()=> {
+it('imports the Bible reading and the explicitly assigned ministry parts for B, keeping names and dates distinct',()=> {
   const [first,second]=parseProgrammePages([fixture],'fixture.pdf');
-  expect(first!.roomBParts.map(p=>p.number)).toEqual(['4','5']);
-  expect(first!.roomBParts[0]).toMatchObject({section:MINISTRY,name:'NOME B',secondName:'AJUDANTE B',allottedSec:180});
+  // A Leitura da Bíblia (Tesouros) também acontece na Sala B; "Discurso especial" e "Necessidades locais" não.
+  expect(first!.roomBParts.map(p=>p.number)).toEqual(['3','4','5']);
+  expect(first!.roomBParts[0]).toMatchObject({section:TREASURES,title:'Leitura da Bíblia',name:'LEITOR B',secondName:'',allottedSec:240});
+  expect(first!.roomBParts[1]).toMatchObject({section:MINISTRY,name:'NOME B',secondName:'AJUDANTE B',allottedSec:180});
+  expect(first!.mainParts.find(p=>p.number==='3')!.name).toBe('LEITOR A');
   expect(first!.mainParts.find(p=>p.number==='4')!.name).toBe('NOME A');
   expect(first!.conductorB).toBe('DIRIGENTE B');expect(second!.date).toBe('2026-10-21');expect(second!.roomBParts).toEqual([]);
+});
+it('copies the Bible reading and ministry parts from the main room to B, leaving the rest out',()=> {
+  const {ctx}=setup({seed:false});
+  const part=(number:string,section:string,title:string,allottedSec:number)=>({number,section,title,allottedSec,name:'',secondName:''});
+  ctx.meeting.replaceProgramme({weekLabel:'14 de outubro de 2026',title:'Programação',kind:'midweek',parts:[
+    part('3',TREASURES,'Leitura da Bíblia',240),part('4',MINISTRY,'Iniciando conversas',180),part('7','NOSSA VIDA CRISTÃ','Necessidades locais',900),
+  ]});
+  const state=ctx.programmes.prepareB();
+  expect(state.meeting.parts.map(p=>p.title)).toEqual(['Leitura da Bíblia','Iniciando conversas']);
 });
 it('reimport updates active names without resetting a running timer or publishing incomplete details',()=> {
   const {ctx}=setup(),programme=ctx.programmes.list().find(p=>p.roomBParts.length)!;
   const events:ReturnType<MobileProgrammes['state']>[]=[];ctx.programmes.subscribe(room=>{if(room==='b')events.push(ctx.programmes.state(room));});
   const loaded=ctx.programmes.load({programmeId:programme.id,room:'b',includeNames:true});
-  expect(events).toHaveLength(1);expect(Object.keys(events[0]!.details!.assignments)).toHaveLength(2);
+  expect(events).toHaveLength(1);expect(Object.keys(events[0]!.details!.assignments)).toHaveLength(3);
   ctx.programmes.roomB.start(loaded.meeting.parts[0]!.id);const before=ctx.programmes.roomB.getState();
   programme.roomBParts[0]!.name='NOVO NOME DO PDF';ctx.programmes.store([programme]);ctx.programmes.activateAutomatic('b');
   expect(ctx.programmes.roomB.getState()).toEqual(before);expect(ctx.programmes.state('b').details!.assignments[before.parts[0]!.id]!.name).toBe('NOVO NOME DO PDF');
@@ -58,9 +70,9 @@ it('rebinds imported names when the same programme regenerates IDs and rejects s
   const {ctx}=setup(),programme=ctx.programmes.list().find(p=>p.roomBParts.length)!;
   const loaded=ctx.programmes.load({programmeId:programme.id,room:'b',includeNames:true});
   ctx.programmes.roomB.replaceProgramme({weekLabel:programme.label,title:MINISTRY,kind:'midweek',parts:programme.roomBParts});
-  const rebound=ctx.programmes.state('b');expect(rebound.details!.assignments[rebound.meeting.parts[0]!.id]!.name).toBe('NOME B');
+  const rebound=ctx.programmes.state('b');expect(rebound.details!.assignments[rebound.meeting.parts[0]!.id]!.name).toBe('LEITOR B');expect(rebound.details!.assignments[rebound.meeting.parts[1]!.id]!.name).toBe('NOME B');
   expect(()=>ctx.programmes.saveDetails('b',{...loaded.details,partIds:loaded.meeting.parts.map(p=>p.id)})).toThrow('A programação mudou');
-  ctx.programmes.saveDetails('b',{assignments:{}});expect(ctx.programmes.state('b').details!.assignments[rebound.meeting.parts[0]!.id]!.name).toBe('NOME B');
+  ctx.programmes.saveDetails('b',{assignments:{}});expect(ctx.programmes.state('b').details!.assignments[rebound.meeting.parts[0]!.id]!.name).toBe('LEITOR B');
 });
 it('recognizes the two circuit-visit talks and does not invent a Watchtower study',()=> {
   const [day]=parseProgrammePages([`Reunião do fim de semana
@@ -114,8 +126,8 @@ it('prepares all dates and automatically advances B with names, preserving runni
     const {ctx}=setup(),current=ctx.programmes.list().find(p=>p.roomBParts.length)!;
     ctx.programmes.store([{...structuredClone(current),id:'future',date:'2026-10-21',label:'21 de outubro de 2026'}]);
     const first=ctx.programmes.state('b');expect(first.details!.date).toBe('2026-10-14');
-    expect(first.details!.assignments[first.meeting.parts[0]!.id]!.name).toBe('NOME B');
-    expect(first.details!.numbers![first.meeting.parts[0]!.id]).toBe('4');
+    expect(first.details!.assignments[first.meeting.parts[0]!.id]!.name).toBe('LEITOR B');
+    expect(first.details!.numbers![first.meeting.parts[0]!.id]).toBe('3');
     ctx.programmes.roomB.start(first.meeting.parts[0]!.id);
     vi.setSystemTime(new Date('2026-10-21T12:00:00'));
     expect(ctx.programmes.state('b').details!.date).toBe('2026-10-14');
