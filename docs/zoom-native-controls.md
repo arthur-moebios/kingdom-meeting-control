@@ -115,3 +115,25 @@ participantes, espera e ordem das mãos, incluindo ciclo de vida dos vetores
 e strings nativos; não copiar estruturas alocadas sem conhecer o destructor.
 Enquetes e seus resultados têm um leitor separado, ainda experimental. Depois disso,
 integrar um adaptador nativo opcional ao serviço, preservando o web oficial.
+
+## Outras instâncias do Zoom no mesmo computador
+
+O controlador só aceita **uma** reunião nativa. Quando há mais de um processo
+de reunião do Zoom aberto (janela de reunião visível, `Zoom.exe` do usuário):
+
+1. o controlador consulta cada um e passa a controlar o que está **na reunião
+   configurada**; nenhum ou mais de um na mesma sala continua sendo recusado
+   ("refusing to guess");
+2. o leitor passivo acompanha o mesmo processo (`--pid`);
+3. confirmado o papel de **anfitrião**, o KMC envia `close-other-instances`, e o
+   controlador encerra os demais processos de reunião (verificação a cada 15 s).
+
+O cliente principal do Zoom (bandeja, login) não é processo de reunião e nunca é
+encerrado. O encerramento é forçado (`TerminateProcess`): quem estava naquela
+outra reunião por este computador cai dela. Desligue em Configurações →
+"Ao assumir como anfitrião, fechar outras reuniões do Zoom abertas neste
+computador" (`automations.closeOtherZoomInstances`, ligado por padrão).
+
+Ainda não validado em Windows real: a escolha entre vários processos e o
+encerramento só têm testes de lógica (`test_zoom_native_instances.py`,
+`nativeZoom.test.ts`).

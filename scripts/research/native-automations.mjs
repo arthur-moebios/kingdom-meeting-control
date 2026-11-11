@@ -95,7 +95,7 @@ export function createAutomations({ python, scriptDir, toolsDir, logPath, spawnW
     if (!child || state.phase !== 'running') return Promise.reject(new Error('Ative as automações nativas primeiro'));
     const allowed = new Set(['join-audio','leave-audio','mute-self','unmute-self','mute-participant','ask-unmute-participant','mute-all','ask-unmute-all',
       'admit-participant','admit-all','set-allow-unmute','lower-hand','lower-all-hands','reclaim-host','lock-meeting','unlock-meeting',
-      'microphone-status','allow-unmute-status','can-reclaim-host','share-start','share-stop','launch-poll','leave']);
+      'microphone-status','allow-unmute-status','can-reclaim-host','share-start','share-stop','launch-poll','leave','close-other-instances']);
     if (!allowed.has(input?.command)) return Promise.reject(new Error('Comando nativo desconhecido'));
     return new Promise((resolve, reject) => {
       const id = ++sequence;

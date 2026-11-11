@@ -21,7 +21,10 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Inv
 let observation = null, worker = null, stopping = false, restart = null;
 function startReader() {
   if (stopping) return;
-  worker = spawn(python, [path.join(scriptDir, 'zoom-native-read.py'), '--managed', '--interval-ms', '500'],
+  // With several Zoom meeting processes, read the one the controller chose.
+  const controlled = automations.snapshot();
+  const target = controlled.phase === 'running' && Number.isInteger(controlled.zoomPid) ? ['--pid', String(controlled.zoomPid)] : [];
+  worker = spawn(python, [path.join(scriptDir, 'zoom-native-read.py'), '--managed', '--interval-ms', '500', ...target],
     { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' } });
   let buffer = '';
   worker.stdout.setEncoding('utf8');

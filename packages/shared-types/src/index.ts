@@ -280,6 +280,8 @@ export const SettingsSchema = z.object({
       /** If another device takes host (a "Reclaim Host" banner appears), take
        *  host back automatically. The PC must stay host to admit / launch polls. */
       autoReclaimHost: z.boolean().default(true),
+      /** Once host, close any other native Zoom meeting process on this PC. */
+      closeOtherZoomInstances: z.boolean().default(true),
     })
     .default({}),
   browser: z

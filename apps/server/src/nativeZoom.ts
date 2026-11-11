@@ -31,6 +31,7 @@ export class NativeZoomService {
   private role: 'host' | 'participant' | null = null;
   private seenToken: string | null = null;
   private nextRole = 0;
+  private nextSweep = 0;
   private sessionConfigured = '';
   private intentionalLeave = false;
   private everConnected = false;
@@ -121,6 +122,15 @@ export class NativeZoomService {
     if (settings.autoReclaimHost && this.role === 'participant') {
       const eligible = await this.command('can-reclaim-host');
       if (eligible.returnRaw === 1) await this.reclaimHost();
+    }
+    // Only the confirmed host closes other meeting processes left on this PC;
+    // a failed sweep must never take the controlled meeting to ERROR.
+    if (settings.closeOtherZoomInstances && this.role === 'host' && Date.now() >= this.nextSweep) {
+      this.nextSweep = Date.now() + 15000;
+      try {
+        const closed = ((await this.command('close-other-instances')).closed || []) as { pid: number; closed: boolean; reason?: string }[];
+        if (closed.length) this.deps.log.warn({ closed }, 'Outras instâncias do Zoom nativo encerradas');
+      } catch (error) { this.deps.log.warn({ err: String(error) }, 'Não foi possível encerrar outras instâncias do Zoom'); }
     }
   }
   async applySettings(): Promise<void> {

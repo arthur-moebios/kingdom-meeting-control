@@ -22,7 +22,9 @@ def load(name, filename):
 BridgeClient = load('bridge_probe', 'zoom-bridge-probe.py').BridgeClient
 MediaPolicy = load('media_policy', 'zoom-native-media-policy.py').MediaPolicy
 MediaObservationFusion = load('media_fusion', 'zoom-native-media-policy.py').MediaObservationFusion
-discover_one = load('zoom_discovery', 'zoom-native-discovery.py').discover_one
+discovery = load('zoom_discovery', 'zoom-native-discovery.py')
+discover_one = discovery.discover_one
+instances = load('zoom_instances', 'zoom-native-instances.py')
 
 def main():
     parser = argparse.ArgumentParser()
@@ -57,7 +59,15 @@ def main():
     if (args.pid is None) != (args.thread is None):
         raise RuntimeError('Supply both --pid/--thread, or omit both for automatic discovery')
     if args.pid is None:
-        connection = discover_one()
+        found = discovery.candidates()
+        if len(found) > 1:
+            # Several meeting processes: control the one in the configured room.
+            def probe(candidate):
+                with BridgeClient(candidate['pid'], controls=True) as probing:
+                    return probing.run('query', candidate['thread'], None, None, args.meeting_id)['before']
+            connection = instances.select_meeting(found, args.meeting_id, probe)
+        else:
+            connection = discover_one()
         args.pid, args.thread = connection['pid'], connection['thread']
     if not 1 <= args.duration <= 600:
         raise RuntimeError('Research runs must be bounded between 1 and 600 seconds')
@@ -186,6 +196,13 @@ def main():
                                 result = call('leave')
                                 owned_source, owned_hwnd, pending_owned = None, None, False
                                 stopping.set()
+                            elif command == 'close-other-instances':
+                                # Only the confirmed host of the configured room may close the others.
+                                plan = controls.make_plan('microphone-status', args.meeting_id, None, None)
+                                status = client.script.exports_sync.control({**plan, 'execute': True}, args.thread, client.wake_window(args.thread))
+                                if (status.get('role') or {}).get('hostRaw') != 1:
+                                    raise RuntimeError('Este Zoom ainda não é o anfitrião')
+                                result = {'closed': instances.terminate(instances.others(discovery.candidates(), args.pid))}
                             elif command == 'launch-poll':
                                 layout = memory.poll_layout(reader)
                                 documents, guard = memory.pointer_vector(reader, layout['component'] + 0x40, 128)

@@ -51,7 +51,7 @@ New-Item -ItemType Directory -Force -Path $packageModules | Out-Null
 }
 $readerDirectory = Join-Path $OutputDirectory 'research'
 New-Item -ItemType Directory -Force -Path $readerDirectory | Out-Null
-@('zoom-native-read.py','zoom-native-memory.py','zoom-native-read-model.py','zoom-native-discovery.py','zoom-native-windows.py',
+@('zoom-native-read.py','zoom-native-memory.py','zoom-native-read-model.py','zoom-native-discovery.py','zoom-native-instances.py','zoom-native-windows.py',
   'zoom-native-media-watch.py','zoom-native-media-policy.py','zoom-native-controls.py','zoom-native-controls.js','zoom-native-controls.json',
   'zoom-bridge-probe.py','zoom-bridge-probe.js') | ForEach-Object {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "research/$_") -Destination $readerDirectory

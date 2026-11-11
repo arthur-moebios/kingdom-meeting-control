@@ -174,6 +174,7 @@ export function SettingsPanel({ displays, onClose, onSaved, native = false }: Pr
           <Check label="Admitir automaticamente da sala de espera" checked={form.automations.autoAdmit} onChange={(v) => setAutomations({ autoAdmit: v })} />
           <Check label="Impedir que participantes se desmutem (ao entrar)" checked={form.automations.lockUnmute} onChange={(v) => setAutomations({ lockUnmute: v })} />
           <Check label="Reassumir host automaticamente (se outro aparelho pegar)" checked={form.automations.autoReclaimHost} onChange={(v) => setAutomations({ autoReclaimHost: v })} />
+          <Check label="Ao assumir como anfitrião, fechar outras reuniões do Zoom abertas neste computador" checked={form.automations.closeOtherZoomInstances} onChange={(v) => setAutomations({ closeOtherZoomInstances: v })} />
           <Check label="Lançar enquete automaticamente ao entrar" checked={form.automations.autoLaunchPoll} onChange={(v) => setAutomations({ autoLaunchPoll: v })} />
           <Field label="Enquete (nome)">
             <input value={form.automations.pollName} onChange={(e) => setAutomations({ pollName: e.target.value })} placeholder="(vazio = a primeira da lista)" />
