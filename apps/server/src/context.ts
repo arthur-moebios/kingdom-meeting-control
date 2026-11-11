@@ -20,6 +20,7 @@ import { APP_VERSION, checkLatest, type UpdateInfo } from './update.js';
 import { consolidateAttendance, localDate, zoomAttendance } from './attendance.js';
 import { AttendanceSync } from './attendanceSync.js';
 import { MapasJwPairing } from './mapasjwPairing.js';
+import { MapasJwProgrammeSync } from './mapasjwProgramme.js';
 
 /**
  * Wires every service together and owns the shared, long-lived state. The
@@ -40,6 +41,7 @@ export class AppContext {
   readonly attendanceSync: AttendanceSync;
   /** Pareamento opcional com o Mapas JW (sem solicitação pendente não faz rede). */
   readonly mapasjwPairing: MapasJwPairing;
+  readonly programmeSync: MapasJwProgrammeSync;
   mobileGatewayReady = false;
   private lastUpdate: UpdateInfo | null = null;
   /** Set by index.ts; lets an API call trigger a graceful shutdown. */
@@ -70,7 +72,7 @@ export class AppContext {
       logger,
       appVersion: APP_VERSION,
       // O item que levou 401 não é reenviado sozinho: manda o estado atual de hoje.
-      onPaired: () => { this.attendanceSync.enqueue(localDate()); },
+      onPaired: () => { this.attendanceSync.enqueue(localDate()); void this.programmeSync.sync(); },
     });
     // Cada mudança real da assistência vira (no máximo) um item colapsado no outbox.
     this.bus.subscribe((ev) => {
@@ -125,6 +127,8 @@ export class AppContext {
     });
     this.cloudflare = new CloudflareIntegration(repoRoot,cfg.dataDir);
     this.programmes = new MobileProgrammes(this);
+    // Com o KMC pareado, lê a programação (partes, minutos, nomes e Sala B) do Mapas JW.
+    this.programmeSync = new MapasJwProgrammeSync({ db: this.db, logger, apply: (programmes) => { this.programmes.applyMapasJw(programmes); } });
     this.mobile = new MobileTimers(this);
   }
 
@@ -294,6 +298,7 @@ export class AppContext {
   async bootstrap(): Promise<void> {
     this.attendanceSync.start();
     this.mapasjwPairing.start();
+    this.programmeSync.start();
     // Conecta ao OBS se a integração estiver ligada (não-fatal; reconecta sozinho).
     this.obs.start();
 
@@ -378,6 +383,7 @@ export class AppContext {
 
   async shutdown(): Promise<void> {
     this.attendanceSync.stop();
+    this.programmeSync.stop();
     this.mapasjwPairing.stop();
     this.cloudflare.close();
     this.presentation.stop();

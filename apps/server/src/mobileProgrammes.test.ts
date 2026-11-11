@@ -4,6 +4,7 @@ import { SettingsSchema } from '@kmc/shared-types';
 import { MobileProgrammes } from './mobileProgrammes.js';
 import { MobileTimers, buildRemoteGateway } from './mobileTimers.js';
 import { MINISTRY, TREASURES, parseProgrammePages } from './programmeImport.js';
+import { programmesFromMapasJw } from './mapasjwProgramme.js';
 import type { AppContext } from './context.js';
 import path from 'node:path';
 import type { Db } from './db.js';
@@ -185,4 +186,27 @@ Leitor de A Sentinela     LEITOR TESTE`],'weekend.pdf')]);
   current={...initial,parts:initial.parts.map(p=>({...p,id:'new-'+p.id})),source:'wol',wolUrl:current.wolUrl};
   expect(ctx.programmes.state('main').details!.assignments[current.parts[0]!.id]!.name).toBe('ORADOR TESTE');
   expect(JSON.stringify(ctx.programmes.mainAssignments())).not.toContain('NOME B');
+});
+
+it('reads the schedule from Mapas JW: Room B reader included, president seeded, manual names kept on the next read',()=> {
+  const {ctx}=setup({seed:false});
+  const api={semanas:[{meio_semana:{data:'2026-10-14',apostila_disponivel:true,presidente:'PRESIDENTE X',dirigente_sala_b:'DIRIGENTE B',partes:[
+    {secao:'tesouros',numero:3,titulo:'Leitura da Bíblia',minutos:4,sala:'principal',designado:'LEITOR A'},
+    {secao:'tesouros',numero:3,titulo:'Leitura da Bíblia',minutos:4,sala:'sala_b',designado:'LEITOR B'},
+    {secao:'faca_seu_melhor',numero:4,titulo:'Iniciando conversas',minutos:3,sala:'principal',designado:'NOME A',ajudante:'AJ A'},
+    {secao:'faca_seu_melhor',numero:4,titulo:'Iniciando conversas',minutos:3,sala:'sala_b',designado:'NOME B',ajudante:'AJ B'},
+  ]}}]};
+  ctx.programmes.applyMapasJw(programmesFromMapasJw(api));
+  const programme=ctx.programmes.list().find(p=>p.sourceFile==='Mapas JW')!;
+  expect(programme.roomBParts.map(p=>p.name)).toEqual(['LEITOR B','NOME B']);
+  expect(ctx.db.getKv('mobile.team.main.midweek.2026-10-14')).toContain('PRESIDENTE X');
+  const loaded=ctx.programmes.load({programmeId:programme.id,room:'b',includeNames:true});
+  expect(loaded.details!.assignments[loaded.meeting.parts[0]!.id]!.name).toBe('LEITOR B');
+  // O operador troca o leitor da Sala B no painel; a próxima leitura não desfaz.
+  ctx.programmes.saveDetails('b',{assignments:{[loaded.meeting.parts[0]!.id]:{name:'LEITOR TROCADO',secondName:''}}});
+  api.semanas[0]!.meio_semana.partes[1]!.designado='LEITOR B NOVO';api.semanas[0]!.meio_semana.partes[3]!.designado='NOME B NOVO';
+  ctx.programmes.applyMapasJw(programmesFromMapasJw(api));
+  const after=ctx.programmes.list().find(p=>p.sourceFile==='Mapas JW')!;
+  expect(after.roomBParts.map(p=>p.name)).toEqual(['LEITOR TROCADO','NOME B NOVO']);
+  expect(ctx.programmes.state('b').details!.assignments[loaded.meeting.parts[0]!.id]!.name).toBe('LEITOR TROCADO');
 });

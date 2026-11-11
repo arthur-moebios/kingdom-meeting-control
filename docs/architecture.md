@@ -90,3 +90,20 @@ Host‑start reliability, raised‑hand true ordering, automatic monitor sharing
 system‑audio sharing are **staged behind assisted/manual modes** and flagged in
 `limitations.md`. The authoritative long‑term source for participant/hand data is
 the **Zoom Meeting SDK/REST/Webhooks**, noted as the recommended next step.
+
+
+## Programação lida do Mapas JW
+
+Com o KMC pareado (mesma conexão do envio de assistência), o servidor lê a programação
+das reuniões em `GET /api/kmc/programacao` (Mapas JW, já mesclada com o Hourglass): partes,
+tempos e nomes de cada sala, inclusive a Leitura da Bíblia e as partes do ministério da
+Sala B, o dirigente da Sala B e o presidente. A leitura roda ~15 s depois de abrir o app,
+a cada 6 horas, ao parear e sob demanda (**Ler a programação agora**, no painel do
+Mapas JW). Cobre 6 semanas a partir da segunda-feira atual.
+
+- O PDF continua funcionando; a leitura do Mapas JW substitui a mesma data/tipo.
+- Nome editado à mão no painel (parte ou dirigente da Sala B) **não é sobrescrito** pela
+  leitura seguinte (`manual` / `conductorBManual`). O presidente só é preenchido se ainda
+  não houver um salvo.
+- Sem pareamento nenhuma chamada é feita; token recusado (401) pausa a leitura e o envio
+  da assistência até parear de novo.

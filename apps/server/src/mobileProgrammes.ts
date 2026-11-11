@@ -7,6 +7,7 @@ import { repoRoot } from '@kmc/config';
 import type { ImportedProgramme, ProgrammePart, RemoteTimerState, TimerDetails, TimerRoom } from '@kmc/shared-types';
 import type { AppContext } from './context.js';
 import { MINISTRY, isRoomBPart, normalize, parseProgrammePages } from './programmeImport.js';
+import { mergeSynced } from './mapasjwProgramme.js';
 import { dateWeek, meetingWeek, weekKey, weekLabel } from './meetingPeriod.js';
 
 const emptyDetails=():TimerDetails=>({assignments:{},conductor:'',helper:'',date:null});
@@ -113,6 +114,16 @@ export class MobileProgrammes {
     }
     return programmes;
   }
+  /** Aplica a leitura do Mapas JW: mescla com a biblioteca (edições manuais ficam) e atualiza o que está ativo. */
+  applyMapasJw(incoming:ImportedProgramme[]) {
+    const merged=incoming.map(programme=>mergeSynced(this.library.find(old=>old.date===programme.date && old.kind===programme.kind),programme));
+    for(const programme of merged) {
+      // O presidente só é semeado quando ainda não há um salvo (nome digitado à mão tem precedência).
+      const key=`mobile.team.main.${programme.kind}.${programme.date}`;
+      if(programme.chairman && !this.ctx.db.getKv(key))this.ctx.db.setKv(key,JSON.stringify({conductor:programme.chairman,helper:''}));
+    }
+    return this.store(merged);
+  }
   async importPdf(filename:unknown,encoded:unknown):Promise<ImportedProgramme[]> {
     if(typeof encoded!=='string' || encoded.length>10_700_000)throw invalid('Envie um PDF de até 8 MB.');
     const bytes=Buffer.from(encoded,'base64');if(bytes.length>8_000_000 || bytes.subarray(0,5).toString()!=='%PDF-')throw invalid('Arquivo PDF inválido.');
@@ -178,8 +189,8 @@ export class MobileProgrammes {
     const programme=this.library.find(p=>p.date===details.date && p.kind===this.service(room).getState().kind);
     if(programme) {
       const parts=room==='b'?programme.roomBParts:programme.mainParts;
-      for(const id of details.partIds){const part=parts.find(p=>p.number===details.numbers?.[id]);if(part && details.assignments[id])Object.assign(part,details.assignments[id]);}
-      if(room==='b')programme.conductorB=details.conductor;
+      for(const id of details.partIds){const part=parts.find(p=>p.number===details.numbers?.[id]);if(part && details.assignments[id]){const next=details.assignments[id];if(part.name!==next.name || part.secondName!==next.secondName)part.manual=true;Object.assign(part,next);}}
+      if(room==='b'){if(programme.conductorB!==details.conductor)programme.conductorBManual=true;programme.conductorB=details.conductor;}
       this.ctx.db.setKv(`mobile.team.${room}.${programme.kind}.${programme.date}`,JSON.stringify({conductor:details.conductor,helper:details.helper}));
       this.ctx.db.setKv('mobile.programmes',JSON.stringify(this.library));
     }

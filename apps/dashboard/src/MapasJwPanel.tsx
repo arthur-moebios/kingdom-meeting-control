@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type MapasJwPairStatus, type MapasJwSyncStatus } from './api.js';
+import { api, type MapasJwPairStatus, type MapasJwProgrammeStatus, type MapasJwSyncStatus } from './api.js';
 
 const fmt = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleString('pt-BR') : '—';
 /** O servidor responde `NNN {json}`; extrai só a mensagem legível. */
@@ -17,11 +17,11 @@ const finalMsg: Record<string, string> = {
 
 /** Integração opcional: o KMC solicita, um gestor aprova no Mapas JW conferindo o código. */
 export function MapasJwPanel() {
-  const [sync, setSync] = useState<MapasJwSyncStatus | null>(null), [pair, setPair] = useState<MapasJwPairStatus | null>(null);
+  const [sync, setSync] = useState<MapasJwSyncStatus | null>(null), [pair, setPair] = useState<MapasJwPairStatus | null>(null), [programme, setProgramme] = useState<MapasJwProgrammeStatus | null>(null);
   const [baseUrl, setBaseUrl] = useState(''), [nome, setNome] = useState(''), [slug, setSlug] = useState('');
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [loadErr, setLoadErr] = useState(false);
   const refresh = async () => {
-    try { const [s, p] = await Promise.all([api.mapasjwSync(), api.mapasjwPairStatus()]); setSync(s); setPair(p); setLoadErr(false); }
+    try { const [s, p, g] = await Promise.all([api.mapasjwSync(), api.mapasjwPairStatus(), api.mapasjwProgramme()]); setSync(s); setPair(p); setProgramme(g); setLoadErr(false); }
     catch { setLoadErr(true); }
   };
   useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 3000); return () => clearInterval(t); }, []);
@@ -58,6 +58,15 @@ export function MapasJwPanel() {
       <li>Último envio com sucesso: {fmt(sync.lastSuccessAt)}</li>
       {sync.lastError && <li className="err">Último erro ({fmt(sync.lastError.at)}): {sync.lastError.message}</li>}
     </ul>}
+
+    {connected && programme && <div className="small" style={{ margin: '6px 0' }}>
+      <b>Programação (Mapas JW)</b>: lida automaticamente a cada 6 horas — partes, tempos e nomes (inclusive a Sala B). Nomes editados à mão aqui não são sobrescritos.
+      <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+        <li>Última leitura: {fmt(programme.lastAt)}{programme.lastResult === 'ok' ? ` · ${programme.programmes} reunião(ões) em ${programme.weeks} semana(s)` : ''}</li>
+        {programme.lastError && <li className="err">Última falha: {programme.lastError}</li>}
+      </ul>
+      <div className="actions"><button className="secondary" disabled={busy} onClick={() => void run(() => api.mapasjwProgrammeSync())}>Ler a programação agora</button></div>
+    </div>}
 
     {pending && <div role="status" style={{ margin: '8px 0' }}>
       <p className="small">Confira este código na tela de aprovação do Mapas JW e aprove lá:</p>

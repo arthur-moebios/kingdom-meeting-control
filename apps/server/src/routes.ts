@@ -407,6 +407,13 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
   });
   app.get("/api/v1/mapasjw/pair", admin, async () => ctx.mapasjwPairing.status());
+  // Programação lida do Mapas JW: estado da última leitura e leitura imediata.
+  app.get("/api/v1/mapasjw/programacao", admin, async () => ctx.programmeSync.status());
+  app.post("/api/v1/mapasjw/programacao/sync", remoteAdmin, async () => {
+    const result = await ctx.programmeSync.sync();
+    ctx.db.audit("admin", "mapasjw.programacao.sync", { result });
+    return ctx.programmeSync.status();
+  });
   app.post("/api/v1/mapasjw/pair/cancel", remoteAdmin, async () => {
     ctx.mapasjwPairing.cancelar();
     ctx.db.audit("admin", "mapasjw.pair.cancel", {});

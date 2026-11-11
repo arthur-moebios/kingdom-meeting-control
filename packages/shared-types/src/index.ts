@@ -407,8 +407,8 @@ export function resolveReturnScene(
 export type TimerRoom = 'main' | 'b';
 export interface TimerNames { name: string; secondName: string; }
 export interface TimerDetails { assignments: Record<string,TimerNames>; numbers?:Record<string,string>; conductor: string; helper: string; date: string | null; }
-export interface ProgrammePart { number: string; section: string; title: string; allottedSec: number; name: string; secondName: string; }
-export interface ImportedProgramme { id: string; date: string; label: string; kind: MeetingKind; sourceFile: string; mainParts: ProgrammePart[]; roomBParts: ProgrammePart[]; conductorB: string; warnings: string[]; }
+export interface ProgrammePart { number: string; section: string; title: string; allottedSec: number; name: string; secondName: string; /** Nome editado à mão: a leitura do Mapas JW não sobrescreve. */ manual?: boolean; }
+export interface ImportedProgramme { id: string; date: string; label: string; kind: MeetingKind; sourceFile: string; mainParts: ProgrammePart[]; roomBParts: ProgrammePart[]; conductorB: string; /** Dirigente da Sala B editado à mão: a leitura do Mapas JW não sobrescreve. */ conductorBManual?: boolean; /** Presidente da reunião (lido do Mapas JW); semeia o nome do presidente se ainda não houver um salvo. */ chairman?: string; warnings: string[]; }
 /** Papel de um aparelho do PWA: somente leitura, uma sala ou ambas. */
 export type DeviceAccess = 'readonly' | 'main' | 'b' | 'both';
 /** Mão levantada como o PWA a recebe: só o necessário para a lista (sem mudo, anfitrião etc.). */
