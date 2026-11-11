@@ -7,7 +7,7 @@ import type { EventEmitter } from 'node:events';
 import type { UpdateStatus, UpdateApplyResult } from '@kmc/shared-types';
 
 /** Versão corrente do app (única fonte; routes.ts e context.ts a importam). */
-export const APP_VERSION = '0.4.5';
+export const APP_VERSION = '0.5.0';
 export const UPDATE_REPO = process.env.KMC_UPDATE_REPO || 'arthur-moebios/kingdom-meeting-control';
 const ASSET_NAME = 'KingdomMeetingControl-setup.exe';
 
