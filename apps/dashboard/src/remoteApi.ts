@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AttendanceSummary, RemoteTimerState, TimerRoom, TimerDetails, ImportedProgramme, ProgrammePart } from '@kmc/shared-types';
+import type { AttendanceSummary, RemoteTimerState, TimerRoom, TimerDetails, ImportedProgramme, ProgrammePart, RemoteMediaState } from '@kmc/shared-types';
 export class PairingRequired extends Error {}
 async function request<T>(path: string, body?: unknown, timeout=8000): Promise<T> {
   const response=await fetch('/remote-api/'+path,{method:body===undefined?'GET':'POST',cache:'no-store',credentials:'same-origin',
@@ -15,6 +15,15 @@ export const remoteApi={
   pause:(id:string)=>request<RemoteTimerState>('part/'+encodeURIComponent(id)+'/pause',{}),
   pauseNext:(id:string)=>request<RemoteTimerState>('part/'+encodeURIComponent(id)+'/pause-next',{}),
   reset:(id:string)=>request<RemoteTimerState>('part/'+encodeURIComponent(id)+'/reset',{}),
+};
+/** Mídias → playlist do JW Library (só para aparelhos com o papel Painel). */
+export const mediaApi={
+  state:()=>request<RemoteMediaState>('media'),
+  image:(body:{filename:string;data:string;thumb:string})=>request<RemoteMediaState>('media/image',body,90000),
+  song:(body:{number:number;thumb:string})=>request<RemoteMediaState>('media/song',body),
+  update:(body:{name?:string;order?:string[];labels?:Record<string,string>;remove?:string[]})=>request<RemoteMediaState>('media/update',body),
+  clear:()=>request<RemoteMediaState>('media/clear',{}),
+  send:()=>request<RemoteMediaState&{opened:boolean}>('media/send',{},30000),
 };
 export const roomApi=(room:TimerRoom)=> {
   const query='?room='+room;

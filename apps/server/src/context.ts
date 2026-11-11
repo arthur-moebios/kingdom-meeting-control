@@ -21,6 +21,7 @@ import { consolidateAttendance, localDate, zoomAttendance } from './attendance.j
 import { AttendanceSync } from './attendanceSync.js';
 import { MapasJwPairing } from './mapasjwPairing.js';
 import { MapasJwProgrammeSync } from './mapasjwProgramme.js';
+import { MediaPlaylist } from './mediaPlaylist.js';
 
 /**
  * Wires every service together and owns the shared, long-lived state. The
@@ -42,6 +43,7 @@ export class AppContext {
   /** Pareamento opcional com o Mapas JW (sem solicitação pendente não faz rede). */
   readonly mapasjwPairing: MapasJwPairing;
   readonly programmeSync: MapasJwProgrammeSync;
+  readonly media: MediaPlaylist;
   mobileGatewayReady = false;
   private lastUpdate: UpdateInfo | null = null;
   /** Set by index.ts; lets an API call trigger a graceful shutdown. */
@@ -129,6 +131,7 @@ export class AppContext {
     this.programmes = new MobileProgrammes(this);
     // Com o KMC pareado, lê a programação (partes, minutos, nomes e Sala B) do Mapas JW.
     this.programmeSync = new MapasJwProgrammeSync({ db: this.db, logger, apply: (programmes) => { this.programmes.applyMapasJw(programmes); } });
+    this.media = new MediaPlaylist({ dir: path.join(cfg.dataDir, 'media') });
     this.mobile = new MobileTimers(this);
   }
 

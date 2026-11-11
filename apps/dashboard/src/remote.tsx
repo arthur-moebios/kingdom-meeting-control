@@ -9,13 +9,14 @@ import { RemoteAttendance } from './RemoteAttendance.js';
 import { ShareTimerImage } from './TimerShare.js';
 import { RemoteBottomNav, TAB_LABELS, type RemoteTab } from './RemoteBottomNav.js';
 import { RemotePainelTab } from './RemotePainelTab.js';
+import { RemoteMedia } from './RemoteMedia.js';
 import './styles.css';
 
 interface InstallPrompt extends Event { prompt:()=>Promise<void>;userChoice:Promise<{outcome:string}>; }
 function RemoteTimer() {
   const [revision,setRevision]=useState(0);
   const [room,setRoom]=useState<TimerRoom>(()=>localStorage.getItem('kmc.timer-room')==='b'?'b':'main');
-  const TABS:RemoteTab[]=['painel','cronometro','programacao','assistencia','mais'];
+  const TABS:RemoteTab[]=['painel','midias','cronometro','programacao','assistencia','mais'];
   const [tab,setTab]=useState<RemoteTab>(()=>{try{const v=localStorage.getItem('kmc.remote-tab') as RemoteTab;return TABS.includes(v)?v:'cronometro';}catch{return 'cronometro';}});
   // Fim de semana: a Sala B não existe. O servidor avisa em `roomBAvailable`; enquanto for false, tudo roda na sala principal.
   const [noRoomB,setNoRoomB]=useState(false);
@@ -25,7 +26,7 @@ function RemoteTimer() {
   const api=roomApi(roomNow);
   const hasPainel=!!state?.painel,weekendNoB=state?.roomBAvailable===false,onlyB=state?.access==='b';
   useEffect(()=>{if(state?.roomBAvailable!==undefined)setNoRoomB(state.roomBAvailable===false);},[state]);
-  useEffect(()=>{if(state && tab==='painel' && !state.painel)setTab('cronometro');},[state,tab]);
+  useEffect(()=>{if(state && (tab==='painel' || tab==='midias') && !state.painel)setTab('cronometro');},[state,tab]);
   function selectTab(next:RemoteTab) {setTab(next);setError(null);try{localStorage.setItem('kmc.remote-tab',next);}catch{}}
   const [programme,setProgramme]=useState(false);
   const [deviceName,setDeviceName]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);
@@ -71,6 +72,7 @@ function RemoteTimer() {
       : <>
         {!connected && tab!=='painel' && <div className="rc-err" role="status">Sem conexão. Comandos desativados até reconectar.</div>}
         {tab==='painel' && hasPainel && <RemotePainelTab state={state} now={now} connected={connected} />}
+        {tab==='midias' && hasPainel && <RemoteMedia connected={connected} onError={setError} />}
         {tab==='cronometro' && <>
           {!canWrite && !weekendNotice && <div className="rc-err" role="status">Somente leitura — peça liberação ao operador.</div>}
           {weekendNotice}
@@ -105,7 +107,7 @@ function RemoteTimer() {
         {tab==='mais' && <section className="rc-tab-section">
           <h2>Este aparelho</h2>
           <p>Permissão nos cronômetros: <b>{accessLabel[state.access ?? 'readonly']}</b></p>
-          <p>Painel (mãos levantadas e anúncios): <b>{hasPainel?'liberado':'não liberado'}</b></p>
+          <p>Painel e Mídias (mãos levantadas, anúncios e playlist do JW Library): <b>{hasPainel?'liberado':'não liberado'}</b></p>
           {!hasPainel && <p className="small muted">O Painel mostra nomes de participantes e só é liberado pelo operador, aparelho por aparelho.</p>}
           <p className="small muted">{weekendNoB?'Fim de semana: a Sala B não funciona nesta reunião.':'A Sala B existe apenas na reunião de meio de semana.'}</p>
           {!standalone && (install?<button className="secondary rc-install" onClick={async()=>{await install.prompt();await install.userChoice;setInstall(null);}}>Instalar no celular</button>

@@ -235,3 +235,24 @@ it('old clients keep reading RemoteTimerState: every previous field is still pre
   }
   expect({...after,painel:undefined,serverNow:0}).toEqual({...before,painel:undefined,serverNow:0});
 });
+
+it('media routes are locked behind the painel role of the device',async()=> {
+  const {app,ctx,headers,pair}=await setup();
+  const calls:string[]=[];
+  (ctx as unknown as {media:unknown}).media={state:()=>({name:'Reunião',items:[],lastSentAt:null}),thumb:()=>null,
+    addSong:()=>{calls.push('song');return {name:'Reunião',items:[],lastSentAt:null};},
+    send:()=>{calls.push('send');return {name:'Reunião',items:[],lastSentAt:null,file:'C:/dados/media/out/x.jwlplaylist',opened:true};}};
+  expect((await app.inject({method:'GET',url:'/remote-api/media',headers})).statusCode).toBe(401);
+  const {cookie}=await pair(),auth={...headers,cookie};
+  expect((await app.inject({method:'GET',url:'/remote-api/media',headers:auth})).statusCode).toBe(403);
+  expect((await app.inject({method:'POST',url:'/remote-api/media/song',headers:auth,payload:{number:1}})).statusCode).toBe(403);
+  expect((await app.inject({method:'POST',url:'/remote-api/media/send',headers:auth,payload:{}})).statusCode).toBe(403);
+  expect(calls).toEqual([]);
+  ctx.mobile.setPainel(ctx.mobile.status().deviceList[0]!.id,true);
+  expect((await app.inject({method:'GET',url:'/remote-api/media',headers:auth})).json()).toEqual({name:'Reunião',items:[],lastSentAt:null});
+  expect((await app.inject({method:'POST',url:'/remote-api/media/song',headers:{...auth,origin:'https://evil.example'},payload:{number:1}})).statusCode).toBe(403);
+  const sent=await app.inject({method:'POST',url:'/remote-api/media/send',headers:auth,payload:{}});
+  // O caminho do arquivo no computador não vai para o celular.
+  expect(sent.json()).toEqual({name:'Reunião',items:[],lastSentAt:null,opened:true});
+  expect(calls).toEqual(['send']);
+});

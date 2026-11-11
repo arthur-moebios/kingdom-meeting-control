@@ -37,6 +37,8 @@ export class MobileTimers {
     return token?this.devices.find(d=>d.expires>Date.now() && d.digest===hash(token)):undefined;
   }
   authorize(req: FastifyRequest): boolean {return !!this.deviceOf(req);}
+  /** Papel `painel`: também libera o envio de mídias para a playlist do JW Library. */
+  hasPainel(req: Pick<FastifyRequest,'headers'>): boolean {return this.deviceOf(req)?.painel===true;}
   accessFor(req: Pick<FastifyRequest,'headers'>): DeviceAccess {return this.deviceOf(req)?.access ?? 'readonly';}
   /** Fim de semana não tem Sala B (regra em attendance.isWeekendMeeting). */
   roomBAvailable(): boolean {return !isWeekendMeeting(this.ctx.meeting.getState(),this.clock());}
@@ -153,6 +155,33 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     const meeting=ctx.programmes.service('b');for(const part of meeting.getState().parts)if(part.running)meeting.pause(part.id);
     return service.state('b',req);
   });
+  // ---- Mídias → playlist do JW Library. Tudo atrás do papel `painel`, o mesmo bloqueio do Painel. ----
+  const mediaAuth=async(req:FastifyRequest,reply:FastifyReply)=> {
+    const denied=await auth(req,reply);if(denied)return denied;
+    if(!service.hasPainel(req) || !ctx.media)return reply.code(403).send({error:'painel_required'});
+  };
+  const mediaWrite=async(req:FastifyRequest,reply:FastifyReply)=> {
+    if(!sameOrigin(req))return reply.code(403).send({error:'invalid_origin'});
+    return mediaAuth(req,reply);
+  };
+  const media=(fn:(body:Record<string,unknown>)=>unknown)=>async(req:FastifyRequest,reply:FastifyReply)=> {
+    try {return fn((req.body && typeof req.body==='object'?req.body:{}) as Record<string,unknown>);}
+    catch(error) {
+      const known=(error as {statusCode?:number}).statusCode===400;
+      if(!known)ctx.logger?.warn({err:String(error)},'Falha ao montar a playlist de mídias');
+      return reply.code(known?400:500).send({error:known?(error as Error).message:'Não foi possível montar a playlist no computador.'});
+    }
+  };
+  app.get('/remote-api/media',{preHandler:mediaAuth},async()=>ctx.media.state());
+  app.get('/remote-api/media/thumb/:id',{preHandler:mediaAuth},async(req,reply)=> {
+    const bytes=ctx.media.thumb((req.params as {id:string}).id);
+    return bytes?reply.header('Content-Type','image/jpeg').send(bytes):reply.code(404).send({error:'not_found'});
+  });
+  app.post('/remote-api/media/image',{preHandler:mediaWrite,bodyLimit:12_000_000},media(body=>ctx.media.addImage(body)));
+  app.post('/remote-api/media/song',{preHandler:mediaWrite,bodyLimit:500_000},media(body=>ctx.media.addSong(body)));
+  app.post('/remote-api/media/update',{preHandler:mediaWrite,bodyLimit:64_000},media(body=>ctx.media.update(body)));
+  app.post('/remote-api/media/clear',{preHandler:mediaWrite,bodyLimit:1024},media(()=>ctx.media.clear()));
+  app.post('/remote-api/media/send',{preHandler:mediaWrite,bodyLimit:1024},media(()=> {const {file:_file,...sent}=ctx.media.send();return sent;}));
   const clients=new Map<WebSocket,{req:FastifyRequest;room:TimerRoom}>();
   const send=(socket:WebSocket,client:{req:FastifyRequest;room:TimerRoom})=> {
     if(!service.authorize(client.req)) {socket.close(4401,'pairing_required');return;}
