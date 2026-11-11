@@ -94,13 +94,15 @@ export function MeetingPanel({ meeting, names, warnSeconds, compact = false, obs
       {/* Parts list */}
       {meeting.parts.length > 0 ? (
         <ul className="m-list">
-          {meeting.parts.map((p) => {
+          {meeting.parts.map((p, index) => {
+            // Na visão compacta a seção só aparece na primeira parte de cada bloco.
+            const sameSection = index > 0 && meeting.parts[index - 1]!.section === p.section;
             const el = elapsedSec(p, now);
             const remaining = p.allottedSec - el;
             const ph = phase(remaining, p.allottedSec, warnSeconds);
             const isActive = p.id === meeting.activePartId;
             return (
-              <li key={p.id} className={`m-row ${isActive ? "active" : ""} ph-${ph}`}>
+              <li key={p.id} className={`m-row ${isActive ? "active" : ""} ${sameSection ? "m-same-section" : ""} ph-${ph}`}>
                 <div className="m-lead">
                   <button className="m-rowmain" onClick={() => run(() => api.meetingActive(p.id))} title={`Tornar parte atual: ${p.title}`}>
                     <span className="m-sec">{p.section}</span>
