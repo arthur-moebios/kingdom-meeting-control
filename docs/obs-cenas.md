@@ -84,6 +84,19 @@ do PC) e escolha a **cena** no seletor da parte (🎬 Cena). Isso **vence o mapa
 mas só **nesta reunião** — ao recarregar a programação, volta ao automático. O
 mapa padrão continua intacto.
 
+## 4.1 Parar o cronômetro volta à cena padrão
+
+Quando o cronômetro **para** (a parte que corria é pausada e nenhuma outra começa),
+o OBS **volta sozinho à cena de repouso**: a **primeira cena do OBS** (ex.: `Orador`)
+ou a que você escolher em **Cena ao parar**. Ex.: *Iniciando conversas* começa e corta
+para a cena dela; ao parar o cronômetro, o OBS volta para `Orador`. Passar direto de
+uma parte para outra **não** passa pela cena de repouso (a próxima parte aplica a dela).
+
+- **Voltar à cena padrão quando o cronômetro parar:** ligado por padrão; desligue para
+  manter a cena atual ao parar.
+- **Cena ao parar:** vazio = a primeira cena da lista do OBS. Retomar a mesma parte
+  corta de novo para a cena dela.
+
 ## 5. No dia
 
 - O cartão **Cenas (OBS)** aparece no painel e no celular quando a integração está
@@ -125,6 +138,7 @@ alguns quadros. Os lábios aparecem um pouco depois do som. Para alinhar:
 
 ```
 override da parte (nesta reunião) → regra do mapa → cena padrão → (nada: não troca)
+ao parar o cronômetro:  Cena ao parar → primeira cena do OBS → (nada: não troca)
 ```
 
 A automação acompanha **só a reunião do salão principal** (a Sala B não controla o

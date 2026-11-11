@@ -9,7 +9,7 @@ import { PresentationMonitorService } from "@kmc/presentation-monitor";
 import { MeetingService } from "@kmc/meeting";
 import type { AttendanceSummary, PollResult, Settings, Snapshot } from "@kmc/shared-types";
 import { ObsService } from "./obs.js";
-import { resolveScene } from "./obsScenes.js";
+import { resolveReturnScene, resolveScene } from "./obsScenes.js";
 import { Db } from "./db.js";
 import { EventBus } from "./eventBus.js";
 import { CloudflareIntegration } from './cloudflare.js';
@@ -152,20 +152,29 @@ export class AppContext {
 
   /**
    * Ao INICIAR o cronômetro de uma parte (ela passa a correr), troca a cena do
-   * OBS conforme o mapa. Só dispara na transição para uma parte diferente — pausar
-   * ou ajustar não mexe na cena, e uma troca manual do operador fica até a próxima
-   * parte. Nada acontece se a integração/auto estiver desligada ou sem cena casada.
+   * OBS conforme o mapa. Só dispara na transição para uma parte diferente — ajustar
+   * o tempo não mexe na cena, e uma troca manual do operador fica até a próxima
+   * parte. Quando o cronômetro PARA (havia uma parte correndo e agora nenhuma),
+   * o OBS volta à cena de repouso (preferência ou a primeira cena do OBS).
+   * Nada acontece se a integração/auto estiver desligada ou sem cena casada.
    */
   private followMeetingScene(): void {
     const parts = this.meeting.getState().parts;
     const running = parts.find((p) => p.running) ?? null;
     const id = running?.id ?? null;
+    const obs = this.settings.obs;
     if (id && id !== this.lastRunningPartId) {
-      const obs = this.settings.obs;
       const scene = resolveScene(running!, obs);
       if (obs.enabled && obs.autoSwitch && scene) {
         void this.obs.setScene(scene).catch((err) =>
           this.logger.warn({ err: String(err), scene }, "OBS: troca automática de cena falhou"),
+        );
+      }
+    } else if (!id && this.lastRunningPartId && obs.enabled && obs.autoSwitch) {
+      const scene = resolveReturnScene(obs, this.obs.getStatus().scenes);
+      if (scene) {
+        void this.obs.setScene(scene).catch((err) =>
+          this.logger.warn({ err: String(err), scene }, "OBS: volta à cena padrão ao parar falhou"),
         );
       }
     }

@@ -326,6 +326,10 @@ export const SettingsSchema = z.object({
       ensureVirtualCam: z.boolean().default(true),
       /** Cena usada quando nenhuma regra casa com a parte. Vazio = não trocar. */
       defaultScene: z.string().default(""),
+      /** Voltar à cena de repouso quando o cronômetro PARA (nenhuma parte correndo). */
+      returnOnStop: z.boolean().default(true),
+      /** Cena de repouso ao parar. Vazio = a PRIMEIRA cena do OBS (ex.: "Orador"). */
+      returnScene: z.string().default(""),
       /** Mapa padrão parte→cena: a PRIMEIRA regra cujo `match` aparece no texto
        *  "seção + título" da parte (sem distinção de maiúsculas) define a cena. */
       rules: z
@@ -380,6 +384,23 @@ export function resolveScene(
   }
   const fallback = obs.defaultScene?.trim();
   return fallback ? fallback : null;
+}
+
+/**
+ * Cena para a qual o OBS volta quando o cronômetro para (nenhuma parte correndo):
+ * a preferência `returnScene` ou, vazia, a primeira cena da lista real do OBS.
+ * null quando o retorno está desligado ou não há cena para escolher (OBS sem cenas
+ * conhecidas e sem preferência) — o chamador não deve trocar.
+ */
+export function resolveReturnScene(
+  obs: Pick<ObsSettings, "returnOnStop" | "returnScene">,
+  scenes: readonly string[],
+): string | null {
+  if (!obs.returnOnStop) return null;
+  const preferred = obs.returnScene?.trim();
+  if (preferred) return preferred;
+  const first = scenes.find((name) => name.trim());
+  return first ? first : null;
 }
 
 /** Deliberately excludes Zoom, participants, settings and credentials. */

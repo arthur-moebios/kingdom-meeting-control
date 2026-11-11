@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ObsSettings } from "@kmc/shared-types";
-import { resolveScene } from "./obsScenes.js";
+import { resolveReturnScene, resolveScene } from "./obsScenes.js";
 
 const rule = (match: string, scene: string) => ({ id: match, match, scene });
 const map = (rules: ObsSettings["rules"], defaultScene = ""): Pick<ObsSettings, "rules" | "defaultScene"> => ({
@@ -48,5 +48,26 @@ describe("resolveScene", () => {
   it("override em branco não conta — segue para o mapa", () => {
     const part = { section: "Fim de Semana", title: "Discurso público", sceneOverride: "   " };
     expect(resolveScene(part, map([rule("discurso", "Orador")]))).toBe("Orador");
+  });
+});
+
+describe("resolveReturnScene", () => {
+  const scenes = ["Orador", "Leitura", "Mesa"];
+
+  it("sem preferência volta à primeira cena do OBS", () => {
+    expect(resolveReturnScene({ returnOnStop: true, returnScene: "" }, scenes)).toBe("Orador");
+  });
+
+  it("a preferência vence a primeira cena", () => {
+    expect(resolveReturnScene({ returnOnStop: true, returnScene: "  Mesa " }, scenes)).toBe("Mesa");
+  });
+
+  it("desligado, não volta a nenhuma cena", () => {
+    expect(resolveReturnScene({ returnOnStop: false, returnScene: "Mesa" }, scenes)).toBeNull();
+  });
+
+  it("sem cenas conhecidas e sem preferência, não troca", () => {
+    expect(resolveReturnScene({ returnOnStop: true, returnScene: "" }, [])).toBeNull();
+    expect(resolveReturnScene({ returnOnStop: true, returnScene: "" }, ["  "])).toBeNull();
   });
 });

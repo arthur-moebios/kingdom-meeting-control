@@ -208,6 +208,10 @@ export function SettingsPanel({ displays, onClose, onSaved, native = false }: Pr
             virtual e conecta. O botão “Preparar OBS” no cartão de cenas faz isso na hora.
           </p>
           <Check label="Trocar de cena automaticamente ao iniciar a parte" checked={form.obs.autoSwitch} onChange={(v) => setObs({ autoSwitch: v })} />
+          <Check label="Voltar à cena padrão quando o cronômetro parar" checked={form.obs.returnOnStop} onChange={(v) => setObs({ returnOnStop: v })} />
+          <Field label="Cena ao parar (vazio = a primeira cena do OBS)">
+            <SceneField value={form.obs.returnScene} scenes={obsScenes} onChange={(v) => setObs({ returnScene: v })} placeholder="(primeira cena do OBS)" />
+          </Field>
           <Field label="Cena padrão (fallback)">
             <SceneField value={form.obs.defaultScene} scenes={obsScenes} onChange={(v) => setObs({ defaultScene: v })} placeholder="(nenhuma — não troca)" />
           </Field>
