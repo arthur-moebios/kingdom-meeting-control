@@ -22,11 +22,18 @@ pelo JW Library; as tabelas e índices são criados, os dados inseridos e só en
 | Playlist | `Tag(Type=2, Name)`; a ordem vem de `TagMap.Position` |
 | Imagem | `PlaylistItem(EndAction=2)` + `IndependentMedia` + `PlaylistItemIndependentMediaMap(DurationTicks=40000000)` |
 | Cântico | `PlaylistItem(EndAction=1)` + `Location(KeySymbol='sjjm', Track=nº, MepsLanguage=5, Type=3)` + `PlaylistItemLocationMap(MajorMultimediaType=2, BaseDurationTicks=NULL)` |
+| Vídeo do JW.org (link) | como o cântico, com a chave do link: `pub-<símbolo>[_<edição>]_<faixa>_VIDEO` → `KeySymbol`, `IssueTagNumber` (AAAAMM00), `Track`; `docid-<id>_<faixa>_VIDEO` → `DocumentId`, `Track`. `BaseDurationTicks` vem do catálogo |
 | Miniatura | uma linha em `IndependentMedia`, apontada por `PlaylistItem.ThumbnailFilePath` |
 
 O cântico é só uma referência: o JW Library usa o vídeo do cântico que ele mesmo tem (ou baixa).
 `manifest.userDataBackup.hash` é o SHA-256 do `userData.db`.
 
+Título, duração e capa de cânticos e vídeos vêm do catálogo público (`b.jw-cdn.org/apis/mediator`); sem
+internet o item entra com o título padrão e a miniatura feita no celular.
+
+Quem tem o papel Painel também vê, em **Mais**, a lista de aparelhos e pode mudar a permissão e o
+Painel dos outros (`/remote-api/devices*`); ninguém tira o Painel do próprio aparelho.
+
 Validado importando no JW Library para Windows em 11/11/2026 (imagens com título próprio e
-cânticos sem duração). Vídeo enviado pelo celular ainda não é aceito: falta uma playlist de
-referência com vídeo. A confirmação da importação continua manual.
+cânticos sem duração). Vídeo por link do JW.org usa o mesmo mecanismo do cântico, mas ainda não foi
+conferido no JW Library. Arquivo de vídeo enviado pelo celular não é aceito. A confirmação da importação continua manual.

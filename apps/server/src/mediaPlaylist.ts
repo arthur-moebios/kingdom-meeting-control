@@ -17,7 +17,40 @@ export const MEDIA_LIMITS = { items: 60, imageBytes: 8_000_000, thumbBytes: 300_
 /** MEPS do português (Brasil), como veio na playlist de referência. */
 const MEPS_LANGUAGE = 5;
 const IMAGE_TICKS = 40_000_000; // 4 s, o padrão do JW Library para imagem
-interface StoredItem { id: string; kind: "image" | "song"; label: string; song?: number; original?: string; }
+/** Vídeo do JW.org por referência (como o cântico): o JW Library toca o que ele mesmo tem ou baixa. */
+export interface JwVideoRef { lank: string; keySymbol: string | null; documentId: number | null; issue: number; track: number; }
+interface StoredItem { id: string; kind: "image" | "song" | "video"; label: string; song?: number; original?: string; video?: JwVideoRef; durationTicks?: number; }
+export interface JwMediaInfo { title: string | null; durationTicks: number | null; thumb: Buffer | null; }
+/**
+ * Reconhece links de vídeo do JW.org (compartilhar → copiar link): `lank=pub-jwb-092_1_VIDEO`,
+ * `.../pub-mwbv_202405_1_VIDEO`, `docid-502018518_1_VIDEO`.
+ */
+export function parseJwVideoLink(value: unknown): JwVideoRef | null {
+  if (typeof value !== "string" || value.length > 600) return null;
+  const m = /(pub|docid)-([A-Za-z0-9-]+?)(?:_(\d{6}|\d{8}))?_(\d{1,4})_VIDEO/.exec(value);
+  if (!m) return null;
+  const issue = m[3] ? Number(m[3].length === 6 ? m[3] + "00" : m[3]) : 0, track = Number(m[4]);
+  if (m[1] === "docid") return /^\d{4,12}$/.test(m[2]!) && !m[3] ? { lank: m[0], keySymbol: null, documentId: Number(m[2]), issue: 0, track } : null;
+  return { lank: m[0], keySymbol: m[2]!, documentId: null, issue, track };
+}
+/** Título, duração e capa no catálogo público do JW.org. Sem internet devolve tudo nulo e o item segue sem eles. */
+export async function lookupJwMedia(lank: string, fetcher: typeof fetch = fetch): Promise<JwMediaInfo> {
+  const none = { title: null, durationTicks: null, thumb: null };
+  try {
+    const response = await fetcher(`https://b.jw-cdn.org/apis/mediator/v1/media-items/T/${encodeURIComponent(lank)}`, { signal: AbortSignal.timeout(6000) });
+    if (!response.ok) return none;
+    const item = ((await response.json()) as { media?: { title?: unknown; duration?: unknown; images?: Record<string, Record<string, unknown>> }[] }).media?.[0];
+    if (!item) return none;
+    const images = item.images ?? {}, url = [images.wss?.sm, images.lss?.lg, images.sqr?.md, images.wss?.lg].find((u): u is string => typeof u === "string" && u.startsWith("https://") && /\.jpe?g$/i.test(u));
+    let thumb: Buffer | null = null;
+    if (url) try {
+      const image = await fetcher(url, { signal: AbortSignal.timeout(6000) });
+      const bytes = image.ok ? Buffer.from(await image.arrayBuffer()) : null;
+      if (bytes && bytes.length <= MEDIA_LIMITS.thumbBytes && bytes[0] === 0xff && bytes[1] === 0xd8) thumb = bytes;
+    } catch { /* fica a miniatura do celular */ }
+    return { title: text(item.title, MEDIA_LIMITS.label) || null, durationTicks: typeof item.duration === "number" && item.duration > 0 ? Math.round(item.duration * 10_000_000) : null, thumb };
+  } catch { return none; }
+}
 interface Stored { name: string; items: StoredItem[]; lastSentAt: string | null; }
 const fail = (message: string) => Object.assign(new Error(message), { statusCode: 400 });
 const ID = /^[a-f0-9]{24}$/;
@@ -67,7 +100,7 @@ function localStamp(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${pad(Math.floor(abs / 60))}${pad(abs % 60)}`;
 }
 
-export interface MediaPlaylistDeps { dir: string; clock?: () => Date; open?: (file: string) => boolean; }
+export interface MediaPlaylistDeps { dir: string; clock?: () => Date; open?: (file: string) => boolean; lookup?: (lank: string) => Promise<JwMediaInfo>; }
 export class MediaPlaylist {
   private stored: Stored;
   private readonly clock: () => Date;
@@ -78,7 +111,7 @@ export class MediaPlaylist {
     try {
       const value = JSON.parse(fs.readFileSync(this.index, "utf8")) as Partial<Stored>;
       if (Array.isArray(value.items)) this.stored = { name: text(value.name, MEDIA_LIMITS.name), lastSentAt: typeof value.lastSentAt === "string" ? value.lastSentAt : null,
-        items: value.items.filter(i => i && ID.test(i.id) && (i.kind === "image" || i.kind === "song") && fs.existsSync(this.thumbPath(i.id)) && (i.kind === "song" || fs.existsSync(this.filePath(i.id)))).slice(0, MEDIA_LIMITS.items) };
+        items: value.items.filter(i => i && ID.test(i.id) && (i.kind === "image" ? fs.existsSync(this.filePath(i.id)) : i.kind === "song" ? Number.isInteger(i.song) : i.kind === "video" && !!i.video && parseJwVideoLink(i.video.lank) !== null) && fs.existsSync(this.thumbPath(i.id))).slice(0, MEDIA_LIMITS.items) };
     } catch { /* primeira execução ou índice ilegível: começa vazio */ }
   }
   private get index() { return path.join(this.deps.dir, "index.json"); }
@@ -103,13 +136,27 @@ export class MediaPlaylist {
     this.stored.items.push({ id, kind: "image", label: text(input.label, MEDIA_LIMITS.label) || `Imagem ${n}`, original });
     this.save(); return this.state();
   }
-  addSong(input: { number?: unknown; label?: unknown; thumb?: unknown }): RemoteMediaState {
+  private lookup(lank: string) { return (this.deps.lookup ?? lookupJwMedia)(lank); }
+  async addSong(input: { number?: unknown; label?: unknown; thumb?: unknown }): Promise<RemoteMediaState> {
     this.room();
     const song = input.number;
     if (typeof song !== "number" || !Number.isInteger(song) || song < 1 || song > MEDIA_LIMITS.songs) throw fail("Informe o número do cântico.");
-    const thumb = jpeg(input.thumb, MEDIA_LIMITS.thumbBytes, "Miniatura"), id = this.newId();
-    fs.writeFileSync(this.thumbPath(id), thumb);
-    this.stored.items.push({ id, kind: "song", song, label: text(input.label, MEDIA_LIMITS.label) || `Cântico ${song}` });
+    const fallback = jpeg(input.thumb, MEDIA_LIMITS.thumbBytes, "Miniatura"), id = this.newId();
+    // Título e capa vêm do JW.org quando há internet; a referência gravada na playlist não muda.
+    const info = await this.lookup(`pub-sjjm_${song}_VIDEO`);
+    this.room();
+    fs.writeFileSync(this.thumbPath(id), info.thumb ?? fallback);
+    this.stored.items.push({ id, kind: "song", song, label: text(input.label, MEDIA_LIMITS.label) || (info.title ? `Cântico ${info.title}` : `Cântico ${song}`) });
+    this.save(); return this.state();
+  }
+  async addVideo(input: { url?: unknown; label?: unknown; thumb?: unknown }): Promise<RemoteMediaState> {
+    this.room();
+    const video = parseJwVideoLink(input.url);
+    if (!video) throw fail("Link não reconhecido. No JW.org ou no JW Library, use Compartilhar no vídeo e cole o link aqui.");
+    const fallback = jpeg(input.thumb, MEDIA_LIMITS.thumbBytes, "Miniatura"), id = this.newId(), info = await this.lookup(video.lank);
+    this.room();
+    fs.writeFileSync(this.thumbPath(id), info.thumb ?? fallback);
+    this.stored.items.push({ id, kind: "video", video, label: text(input.label, MEDIA_LIMITS.label) || info.title || "Vídeo do JW.org", ...(info.durationTicks ? { durationTicks: info.durationTicks } : {}) });
     this.save(); return this.state();
   }
   update(input: { name?: unknown; order?: unknown; labels?: unknown; remove?: unknown }): RemoteMediaState {
@@ -156,19 +203,20 @@ export class MediaPlaylist {
       };
       const item = db.prepare("INSERT INTO PlaylistItem(Label,Accuracy,EndAction,ThumbnailFilePath) VALUES (?,1,?,?)");
       const tag = db.prepare("INSERT INTO TagMap(PlaylistItemId,TagId,Position) VALUES (?,1,?)");
-      const location = db.prepare("INSERT INTO Location(Track,IssueTagNumber,KeySymbol,MepsLanguage,Type) VALUES (?,0,'sjjm',?,3)");
-      const toLocation = db.prepare("INSERT INTO PlaylistItemLocationMap(PlaylistItemId,LocationId,MajorMultimediaType,BaseDurationTicks) VALUES (?,?,2,NULL)");
+      const location = db.prepare("INSERT INTO Location(DocumentId,Track,IssueTagNumber,KeySymbol,MepsLanguage,Type) VALUES (?,?,?,?,?,3)");
+      const toLocation = db.prepare("INSERT INTO PlaylistItemLocationMap(PlaylistItemId,LocationId,MajorMultimediaType,BaseDurationTicks) VALUES (?,?,2,?)");
       const toMedia = db.prepare("INSERT INTO PlaylistItemIndependentMediaMap VALUES (?,?,?)");
-      const locations = new Map<number, number>();
+      const locations = new Map<string, number>();
       this.stored.items.forEach((entry, position) => {
         const thumb = addMedia(fs.readFileSync(this.thumbPath(entry.id)), randomUUID().toUpperCase());
         // EndAction: 1 = segue (vídeo/cântico), 2 = para na imagem — como o JW Library exporta.
-        const id = Number(item.run(entry.label, entry.kind === "song" ? 1 : 2, thumb.file).lastInsertRowid);
+        const id = Number(item.run(entry.label, entry.kind === "image" ? 2 : 1, thumb.file).lastInsertRowid);
         tag.run(id, position);
-        if (entry.kind === "song") {
-          // Location é única por (símbolo, faixa, idioma): o mesmo cântico duas vezes reutiliza a linha.
-          if (!locations.has(entry.song!)) locations.set(entry.song!, Number(location.run(entry.song!, MEPS_LANGUAGE).lastInsertRowid));
-          toLocation.run(id, locations.get(entry.song!)!);
+        if (entry.kind !== "image") {
+          const ref: JwVideoRef = entry.video ?? { lank: `pub-sjjm_${entry.song}_VIDEO`, keySymbol: "sjjm", documentId: null, issue: 0, track: entry.song! };
+          // O mesmo cântico ou vídeo duas vezes reutiliza a linha de Location.
+          if (!locations.has(ref.lank)) locations.set(ref.lank, Number(location.run(ref.documentId, ref.track, ref.issue, ref.keySymbol, MEPS_LANGUAGE).lastInsertRowid));
+          toLocation.run(id, locations.get(ref.lank)!, entry.durationTicks ?? null);
         } else toMedia.run(id, addMedia(fs.readFileSync(this.filePath(entry.id)), entry.original || "imagem.jpeg").id, IMAGE_TICKS);
       });
       for (const sql of JW_PLAYLIST_TRIGGERS) db.exec(sql);

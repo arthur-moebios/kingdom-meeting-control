@@ -431,7 +431,9 @@ export interface RemoteTimerState { meeting: MeetingSchedule; warnSeconds: numbe
   /** Presente apenas para aparelhos com o papel `painel`. */
   painel?: RemotePainel; }
 /** Mídias enviadas pelo celular (papel `painel`) que viram uma playlist do JW Library no computador. */
-export interface RemoteMediaItem { id: string; kind: 'image' | 'song'; label: string; song?: number; }
+export interface RemoteMediaItem { id: string; kind: 'image' | 'song' | 'video'; label: string; song?: number; }
+/** Aparelhos do controle remoto, como um aparelho com o papel Painel os vê em Mais. */
+export interface RemoteDeviceInfo { id: string; label: string; createdAt: string; access: DeviceAccess; painel: boolean; self: boolean; }
 export interface RemoteMediaState { name: string; items: RemoteMediaItem[]; lastSentAt: string | null; }
 export interface RemoteIntegrationStatus {
   bundled: boolean; version: string; authorized: boolean; phase: string; enabled: boolean;

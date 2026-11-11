@@ -10,6 +10,7 @@ import { ShareTimerImage } from './TimerShare.js';
 import { RemoteBottomNav, TAB_LABELS, type RemoteTab } from './RemoteBottomNav.js';
 import { RemotePainelTab } from './RemotePainelTab.js';
 import { RemoteMedia } from './RemoteMedia.js';
+import { RemoteDevices } from './RemoteDevices.js';
 import './styles.css';
 
 interface InstallPrompt extends Event { prompt:()=>Promise<void>;userChoice:Promise<{outcome:string}>; }
@@ -108,6 +109,7 @@ function RemoteTimer() {
           <h2>Este aparelho</h2>
           <p>Permissão nos cronômetros: <b>{accessLabel[state.access ?? 'readonly']}</b></p>
           <p>Painel e Mídias (mãos levantadas, anúncios e playlist do JW Library): <b>{hasPainel?'liberado':'não liberado'}</b></p>
+          {hasPainel && <RemoteDevices connected={connected} onError={setError} />}
           {!hasPainel && <p className="small muted">O Painel mostra nomes de participantes e só é liberado pelo operador, aparelho por aparelho.</p>}
           <p className="small muted">{weekendNoB?'Fim de semana: a Sala B não funciona nesta reunião.':'A Sala B existe apenas na reunião de meio de semana.'}</p>
           {!standalone && (install?<button className="secondary rc-install" onClick={async()=>{await install.prompt();await install.userChoice;setInstall(null);}}>Instalar no celular</button>

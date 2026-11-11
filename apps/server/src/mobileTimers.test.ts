@@ -256,3 +256,23 @@ it('media routes are locked behind the painel role of the device',async()=> {
   expect(sent.json()).toEqual({name:'Reunião',items:[],lastSentAt:null,opened:true});
   expect(calls).toEqual(['send']);
 });
+
+it('a painel device manages the other devices from the phone, but cannot drop its own painel',async()=> {
+  const {app,ctx,headers,pair}=await setup();
+  const admin={...headers,...await pair()},other={...headers,...await pair()};
+  const [first,second]=ctx.mobile.status().deviceList;
+  expect((await app.inject({method:'GET',url:'/remote-api/devices',headers:admin})).statusCode).toBe(403);
+  expect((await app.inject({method:'POST',url:'/remote-api/devices/update',headers:other,payload:{id:second!.id,painel:true}})).statusCode).toBe(403);
+  ctx.mobile.setPainel(first!.id,true);
+  const list=(await app.inject({method:'GET',url:'/remote-api/devices',headers:admin})).json() as {id:string;self:boolean;painel:boolean}[];
+  expect(list.map(d=>[d.self,d.painel])).toEqual([[true,true],[false,false]]);
+  expect(JSON.stringify(list)).not.toContain('digest');
+  const granted=await app.inject({method:'POST',url:'/remote-api/devices/update',headers:admin,payload:{id:second!.id,painel:true,access:'readonly'}});
+  expect((granted.json() as {painel:boolean;access:string}[])[1]).toMatchObject({painel:true,access:'readonly'});
+  expect((await app.inject({method:'GET',url:'/remote-api/devices',headers:other})).statusCode).toBe(200);
+  expect((await app.inject({method:'POST',url:'/remote-api/devices/update',headers:admin,payload:{id:first!.id,painel:false}})).statusCode).toBe(400);
+  expect((await app.inject({method:'POST',url:'/remote-api/devices/update',headers:admin,payload:{id:'nope',painel:true}})).statusCode).toBe(404);
+  expect((await app.inject({method:'POST',url:'/remote-api/devices/update',headers:admin,payload:{id:second!.id,access:'root'}})).statusCode).toBe(400);
+  expect((await app.inject({method:'POST',url:'/remote-api/devices/update',headers:{...admin,origin:'https://evil.example'},payload:{id:second!.id,painel:false}})).statusCode).toBe(403);
+  expect(ctx.mobile.status().deviceList[1]!.painel).toBe(true);
+});

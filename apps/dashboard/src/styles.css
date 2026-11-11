@@ -460,6 +460,11 @@ legend { color: var(--accent); font-size: 13px; padding: 0 6px; font-weight: 600
 .rc-media-add form { display: flex; gap: 8px; }
 .rc-media-add form input { flex: 1 1 0; min-width: 0; }
 .rc-media-send { width: 100%; margin: 4px 0 8px; }
+.rc-devices { margin: 14px 0; }
+.rc-device { gap: 8px; align-items: center; flex-wrap: wrap; }
+.rc-device .rc-rowmain { flex: 1 1 140px; min-width: 0; }
+.rc-device select { flex: 0 1 auto; max-width: 150px; font-size: 13px; padding: 6px; }
+.rc-device-painel { display: flex; align-items: center; gap: 5px; font-size: 13px; white-space: nowrap; }
 .rc-bnav-item { max-width: 112px; }
 .rc-tab-section p { margin: 6px 0; }
 .rc-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }

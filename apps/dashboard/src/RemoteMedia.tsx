@@ -22,13 +22,13 @@ async function prepareImage(file: File): Promise<{ data: string; thumb: string }
     return { data: base64(full, 0.88), thumb: base64(draw(full, full.width, full.height, THUMB_MAX), 0.8) };
   } finally { URL.revokeObjectURL(url); }
 }
-function songThumb(number: number): string {
+function tileThumb(symbol: string, caption: string): string {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = SONG_THUMB;
   const g = canvas.getContext('2d')!;
   g.fillStyle = '#1f3a5f'; g.fillRect(0, 0, SONG_THUMB, SONG_THUMB);
   g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '600 56px sans-serif'; g.fillText('♪', SONG_THUMB / 2, 70);
-  g.font = '700 84px sans-serif'; g.fillText(String(number), SONG_THUMB / 2, 150);
+  g.font = '600 56px sans-serif'; g.fillText(symbol, SONG_THUMB / 2, caption ? 70 : SONG_THUMB / 2);
+  if (caption) { g.font = '700 84px sans-serif'; g.fillText(caption, SONG_THUMB / 2, 150); }
   return base64(canvas, 0.85);
 }
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -36,7 +36,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Aba Mídias: fotos e cânticos enviados pelo celular viram uma playlist do JW Library no computador do salão. */
 export function RemoteMedia({ connected, onError }: { connected: boolean; onError: (m: string | null) => void }) {
   const [data, setData] = useState<RemoteMediaState | null>(null), [busy, setBusy] = useState<string | null>(null);
-  const [song, setSong] = useState(''), [name, setName] = useState(''), [sent, setSent] = useState<string | null>(null);
+  const [song, setSong] = useState(''), [link, setLink] = useState(''), [name, setName] = useState(''), [sent, setSent] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const apply = (value: RemoteMediaState) => { setData(value); setName(value.name); };
   useEffect(() => { if (connected) mediaApi.state().then(apply).catch(e => onError(message(e))); }, [connected]);
@@ -53,8 +53,9 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
   const addSong = () => {
     const number = Number(song);
     if (!Number.isInteger(number) || number < 1 || number > 200) { onError('Informe o número do cântico.'); return; }
-    void run('Adicionando…', async () => { apply(await mediaApi.song({ number, thumb: songThumb(number) })); setSong(''); });
+    void run('Adicionando…', async () => { apply(await mediaApi.song({ number, thumb: tileThumb('♪', String(number)) })); setSong(''); });
   };
+  const addVideo = () => run('Buscando o vídeo…', async () => { apply(await mediaApi.video({ url: link.trim(), thumb: tileThumb('▶', '') })); setLink(''); });
   const change = (body: Parameters<typeof mediaApi.update>[0]) => run('Salvando…', async () => apply(await mediaApi.update(body)));
   function move(at: number, by: number) {
     if (!data) return;
@@ -80,7 +81,7 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
     <label>Nome da playlist <input value={name} maxLength={80} disabled={disabled} onChange={e => setName(e.target.value)} onBlur={() => { if (name.trim() !== data.name) void change({ name: name.trim() }); }} /></label>
     <ul className="rc-list rc-media-list">{data.items.map((item, at) => <li key={item.id} className="rc-row rc-row-plain">
       <img src={`/remote-api/media/thumb/${item.id}`} alt="" loading="lazy" />
-      <div className="rc-rowmain"><span className="rc-sec">{item.kind === 'song' ? 'Cântico' : 'Imagem'}</span><button type="button" className="rc-media-label" disabled={disabled} onClick={() => rename(item.id, item.label)}>{item.label}</button></div>
+      <div className="rc-rowmain"><span className="rc-sec">{item.kind === 'song' ? 'Cântico' : item.kind === 'video' ? 'Vídeo do JW.org' : 'Imagem'}</span><button type="button" className="rc-media-label" disabled={disabled} onClick={() => rename(item.id, item.label)}>{item.label}</button></div>
       <div className="rc-media-actions">
         <button type="button" className="secondary" aria-label="Subir" disabled={disabled || at === 0} onClick={() => move(at, -1)}>↑</button>
         <button type="button" className="secondary" aria-label="Descer" disabled={disabled || at === data.items.length - 1} onClick={() => move(at, 1)}>↓</button>
@@ -95,11 +96,15 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
         <input type="number" inputMode="numeric" min={1} max={200} placeholder="Nº do cântico" aria-label="Número do cântico" value={song} disabled={disabled} onChange={e => setSong(e.target.value)} />
         <button className="secondary" disabled={disabled || !song}>Adicionar cântico</button>
       </form>
+      <form onSubmit={e => { e.preventDefault(); addVideo(); }}>
+        <input type="url" inputMode="url" placeholder="Link de vídeo do JW.org" aria-label="Link de vídeo do JW.org" value={link} disabled={disabled} onChange={e => setLink(e.target.value)} />
+        <button className="secondary" disabled={disabled || !link.trim()}>Adicionar vídeo</button>
+      </form>
     </div>
     {busy && <p className="small" role="status">{busy}</p>}
     <button type="button" className="rc-media-send" disabled={disabled || !data.items.length} onClick={() => void send()}>Enviar ao JW Library</button>
     {sent && <p className="small" role="status">{sent}</p>}
     {data.items.length > 0 && <button type="button" className="secondary" disabled={disabled} onClick={() => { if (window.confirm('Remover todos os itens desta playlist?')) void run('Limpando…', async () => apply(await mediaApi.clear())); }}>Limpar tudo</button>}
-    <p className="small muted">Toque no título para renomear. Vídeos enviados pelo celular ainda não são aceitos.</p>
+    <p className="small muted">Toque no título para renomear. Vídeo: no JW.org ou no JW Library, toque em Compartilhar no vídeo e cole o link aqui. Arquivos de vídeo do celular ainda não são aceitos.</p>
   </section>;
 }

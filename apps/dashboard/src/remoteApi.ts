@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AttendanceSummary, RemoteTimerState, TimerRoom, TimerDetails, ImportedProgramme, ProgrammePart, RemoteMediaState } from '@kmc/shared-types';
+import type { AttendanceSummary, RemoteTimerState, TimerRoom, TimerDetails, ImportedProgramme, ProgrammePart, RemoteMediaState, RemoteDeviceInfo, DeviceAccess } from '@kmc/shared-types';
 export class PairingRequired extends Error {}
 async function request<T>(path: string, body?: unknown, timeout=8000): Promise<T> {
   const response=await fetch('/remote-api/'+path,{method:body===undefined?'GET':'POST',cache:'no-store',credentials:'same-origin',
@@ -20,10 +20,16 @@ export const remoteApi={
 export const mediaApi={
   state:()=>request<RemoteMediaState>('media'),
   image:(body:{filename:string;data:string;thumb:string})=>request<RemoteMediaState>('media/image',body,90000),
-  song:(body:{number:number;thumb:string})=>request<RemoteMediaState>('media/song',body),
+  song:(body:{number:number;thumb:string})=>request<RemoteMediaState>('media/song',body,20000),
+  video:(body:{url:string;thumb:string})=>request<RemoteMediaState>('media/video',body,20000),
   update:(body:{name?:string;order?:string[];labels?:Record<string,string>;remove?:string[]})=>request<RemoteMediaState>('media/update',body),
   clear:()=>request<RemoteMediaState>('media/clear',{}),
   send:()=>request<RemoteMediaState&{opened:boolean}>('media/send',{},30000),
+};
+/** Administração dos aparelhos por quem tem o papel Painel. */
+export const devicesApi={
+  list:()=>request<RemoteDeviceInfo[]>('devices'),
+  update:(body:{id:string;painel?:boolean;access?:DeviceAccess})=>request<RemoteDeviceInfo[]>('devices/update',body),
 };
 export const roomApi=(room:TimerRoom)=> {
   const query='?room='+room;

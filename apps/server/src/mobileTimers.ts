@@ -39,6 +39,8 @@ export class MobileTimers {
   authorize(req: FastifyRequest): boolean {return !!this.deviceOf(req);}
   /** Papel `painel`: também libera o envio de mídias para a playlist do JW Library. */
   hasPainel(req: Pick<FastifyRequest,'headers'>): boolean {return this.deviceOf(req)?.painel===true;}
+  /** Lista para quem tem o papel Painel administrar os outros aparelhos pelo celular. */
+  devicesFor(req: Pick<FastifyRequest,'headers'>) {const own=this.deviceOf(req)?.id;return this.status().deviceList.map(d=>({...d,self:d.id===own}));}
   accessFor(req: Pick<FastifyRequest,'headers'>): DeviceAccess {return this.deviceOf(req)?.access ?? 'readonly';}
   /** Fim de semana não tem Sala B (regra em attendance.isWeekendMeeting). */
   roomBAvailable(): boolean {return !isWeekendMeeting(this.ctx.meeting.getState(),this.clock());}
@@ -158,14 +160,14 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
   // ---- Mídias → playlist do JW Library. Tudo atrás do papel `painel`, o mesmo bloqueio do Painel. ----
   const mediaAuth=async(req:FastifyRequest,reply:FastifyReply)=> {
     const denied=await auth(req,reply);if(denied)return denied;
-    if(!service.hasPainel(req) || !ctx.media)return reply.code(403).send({error:'painel_required'});
+    if(!service.hasPainel(req))return reply.code(403).send({error:'painel_required'});
   };
   const mediaWrite=async(req:FastifyRequest,reply:FastifyReply)=> {
     if(!sameOrigin(req))return reply.code(403).send({error:'invalid_origin'});
     return mediaAuth(req,reply);
   };
   const media=(fn:(body:Record<string,unknown>)=>unknown)=>async(req:FastifyRequest,reply:FastifyReply)=> {
-    try {return fn((req.body && typeof req.body==='object'?req.body:{}) as Record<string,unknown>);}
+    try {return await fn((req.body && typeof req.body==='object'?req.body:{}) as Record<string,unknown>);}
     catch(error) {
       const known=(error as {statusCode?:number}).statusCode===400;
       if(!known)ctx.logger?.warn({err:String(error)},'Falha ao montar a playlist de mídias');
@@ -179,6 +181,20 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
   });
   app.post('/remote-api/media/image',{preHandler:mediaWrite,bodyLimit:12_000_000},media(body=>ctx.media.addImage(body)));
   app.post('/remote-api/media/song',{preHandler:mediaWrite,bodyLimit:500_000},media(body=>ctx.media.addSong(body)));
+  app.post('/remote-api/media/video',{preHandler:mediaWrite,bodyLimit:500_000},media(body=>ctx.media.addVideo(body)));
+  // Quem tem o papel Painel administra os aparelhos pelo celular (mesmo poder do operador no computador,
+  // menos tirar o próprio papel — para ninguém se trancar do lado de fora sem querer).
+  app.get('/remote-api/devices',{preHandler:mediaAuth},async req=>service.devicesFor(req));
+  app.post('/remote-api/devices/update',{preHandler:mediaWrite,bodyLimit:1024},async(req,reply)=> {
+    const {id,painel,access}=(req.body && typeof req.body==='object'?req.body:{}) as {id?:unknown;painel?:unknown;access?:unknown};
+    const target=service.devicesFor(req).find(d=>d.id===id);
+    if(!target)return reply.code(404).send({error:'Aparelho não encontrado.'});
+    if(painel!==undefined && typeof painel!=='boolean' || access!==undefined && !isDeviceAccess(access))return reply.code(400).send({error:'Pedido inválido.'});
+    if(target.self && painel===false)return reply.code(400).send({error:'Você não pode tirar o Painel do próprio aparelho. Peça a outro administrador ou ao operador.'});
+    if(typeof painel==='boolean')service.setPainel(target.id,painel);
+    if(isDeviceAccess(access))service.setAccess(target.id,access);
+    return service.devicesFor(req);
+  });
   app.post('/remote-api/media/update',{preHandler:mediaWrite,bodyLimit:64_000},media(body=>ctx.media.update(body)));
   app.post('/remote-api/media/clear',{preHandler:mediaWrite,bodyLimit:1024},media(()=>ctx.media.clear()));
   app.post('/remote-api/media/send',{preHandler:mediaWrite,bodyLimit:1024},media(()=> {const {file:_file,...sent}=ctx.media.send();return sent;}));
