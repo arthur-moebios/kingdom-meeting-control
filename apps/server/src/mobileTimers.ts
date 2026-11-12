@@ -143,9 +143,14 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     return service.state(room,req);
   });
   app.get('/remote-api/programmes',{preHandler:auth},async()=>ctx.programmes?.list() ?? []);
-  app.post('/remote-api/programmes/import',{onRequest:commandAuth,bodyLimit:11_000_000},async(req)=> {
-    const body=req.body as {filename?:unknown;data?:unknown};const imported=await ctx.programmes.importPdf(body?.filename,body?.data);
-    ctx.programmes.activateAutomatic(roomOf(req));return imported;
+  // O celular não importa mais PDF: a programação vem do Mapas JW (ou é ajustada à mão).
+  app.post('/remote-api/programmes/sync',{preHandler:commandAuth},async(req,reply)=> {
+    const result=await ctx.programmeSync.sync(),status=ctx.programmeSync.status();
+    if(result==='inactive')return reply.code(409).send({error:'Este computador ainda não está pareado com o Mapas JW. Peça ao operador para parear.'});
+    if(result==='paused')return reply.code(409).send({error:'O Mapas JW recusou o acesso deste computador. Peça ao operador para parear de novo.'});
+    if(result==='error')return reply.code(502).send({error:'Não foi possível ler o Mapas JW agora. Confira a internet do computador e tente de novo.'});
+    ctx.programmes.activateAutomatic(roomOf(req));
+    return {programmes:status.programmes,weeks:status.weeks,lastAt:status.lastAt};
   });
   app.post('/remote-api/programmes/load',{preHandler:commandAuth,bodyLimit:100_000},async(req)=> {
     const body=req.body as {programmeId?:unknown;includeNames?:unknown;edits?:unknown};

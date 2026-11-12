@@ -38,12 +38,14 @@ somente partes de **Faça Seu Melhor no Ministério**. Não aparece no dashboard
 no tablet ou no snapshot/eventos da reunião principal. Iniciar, pausar, zerar e
 encerrar a Sala B não altera os tempos principais.
 
-Em **Programação e nomes**, importe a exportação PDF de meio ou fim de semana
-(até 8 MB e 20 páginas, com texto e sem senha). Todas as datas e nomes são
-preparados de uma vez e guardados em uma biblioteca de até 120 datas. O PWA
-carrega a programação de hoje ou a próxima data disponível automaticamente;
-se o arquivo terminou, mantém a última disponível. Não há seletor de data ou
-etapa de confirmação: o PDF inteiro é preparado automaticamente.
+Em **Programação → Sincronizar ou editar**, o botão **Sincronizar com o Mapas JW**
+busca a programação e os nomes das próximas 6 semanas (`POST /remote-api/programmes/sync`,
+exige permissão de escrita na sala). O celular não importa mais PDF; o que não vier do
+Mapas JW é ajustado em **Editar nomes à mão**, e esses ajustes não são sobrescritos pela
+sincronização seguinte. A biblioteca guarda até 120 datas e o PWA carrega a de hoje ou a
+próxima disponível automaticamente, sem seletor de data.
+O PWA abre sem zoom: pinça, toque duplo e "puxar para atualizar" ficam desligados, como
+em um aplicativo instalado.
 Na mudança do dia, a programação avança quando o controlador é acessado e não
 há cronômetro em execução.
 Quando o operador carrega uma semana do WOL, essa semana é a referência das

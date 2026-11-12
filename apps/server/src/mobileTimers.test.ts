@@ -276,3 +276,21 @@ it('a painel device manages the other devices from the phone, but cannot drop it
   expect((await app.inject({method:'POST',url:'/remote-api/devices/update',headers:{...admin,origin:'https://evil.example'},payload:{id:second!.id,painel:false}})).statusCode).toBe(403);
   expect(ctx.mobile.status().deviceList[1]!.painel).toBe(true);
 });
+
+it('the phone syncs the programme from Mapas JW and no longer accepts a PDF',async()=> {
+  const {app,ctx,headers,pair}=await setup();
+  const device={...headers,...await pair()};
+  ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'main');
+  let result='ok';const activateAutomatic=vi.fn();
+  Object.assign(ctx,{programmeSync:{sync:async()=>result,status:()=>({active:true,lastAt:'2026-11-04T12:00:00.000Z',lastResult:result,lastError:null,weeks:6,programmes:11})},programmes:{activateAutomatic}});
+  expect((await app.inject({method:'POST',url:'/remote-api/programmes/import',headers:device,payload:{filename:'a.pdf',data:'AAAA'}})).statusCode).toBe(404);
+  expect((await app.inject({method:'POST',url:'/remote-api/programmes/sync',headers,payload:{}})).statusCode).toBe(401);
+  const done=await app.inject({method:'POST',url:'/remote-api/programmes/sync',headers:device,payload:{}});
+  expect(done.statusCode).toBe(200);expect(done.json()).toEqual({programmes:11,weeks:6,lastAt:'2026-11-04T12:00:00.000Z'});expect(activateAutomatic).toHaveBeenCalledWith('main');
+  result='inactive';const unpaired=await app.inject({method:'POST',url:'/remote-api/programmes/sync',headers:device,payload:{}});
+  expect(unpaired.statusCode).toBe(409);expect(unpaired.json().error).toMatch(/pareado com o Mapas JW/);
+  result='error';expect((await app.inject({method:'POST',url:'/remote-api/programmes/sync',headers:device,payload:{}})).statusCode).toBe(502);
+  expect(activateAutomatic).toHaveBeenCalledTimes(1);
+  ctx.mobile.setAccess(ctx.mobile.status().deviceList[0]!.id,'readonly');
+  expect((await app.inject({method:'POST',url:'/remote-api/programmes/sync',headers:device,payload:{}})).statusCode).toBe(403);
+});

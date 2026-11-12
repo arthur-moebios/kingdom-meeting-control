@@ -2,12 +2,22 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#0a1120" />
     <link rel="manifest" href="/remote.webmanifest" />
     <link rel="apple-touch-icon" href="/remote-icons/icon-192.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <style>
+      /* Comporta-se como aplicativo: sem pinça, sem zoom de toque duplo, sem "puxar para atualizar". */
+      html, body { touch-action: pan-x pan-y; overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+      button, label, summary, nav { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    </style>
+    <script>
+      // O Safari do iPhone ignora user-scalable=no: a pinça é cancelada aqui.
+      for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('touchmove', function (e) { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+    </script>
     <title>Controle — Cronômetro</title>
   </head>
   <body>

@@ -43,7 +43,7 @@ export const roomApi=(room:TimerRoom)=> {
     attendance:()=>request<AttendanceSummary>('attendance'),
     setAttendance:(presencial:number)=>request<AttendanceSummary>('attendance',{presencial}),
     list:()=>request<ImportedProgramme[]>('programmes'),
-    importPdf:(filename:string,data:string)=>request<ImportedProgramme[]>('programmes/import'+query,{filename,data},30000),
+    sync:()=>request<{programmes:number;weeks:number;lastAt:string|null}>('programmes/sync'+query,{},30000),
     load:(programmeId:string,includeNames:boolean,edits:ProgrammePart[])=>request<RemoteTimerState>('programmes/load'+query,{programmeId,includeNames,edits}),
     prepareB:()=>request<RemoteTimerState>('room-b/prepare',{}),
     details:(details:TimerDetails,partIds:string[])=>request<RemoteTimerState>('details'+query,{...details,partIds}),

@@ -92,16 +92,16 @@ function RemoteTimer() {
               <button className="rc-btn reset" aria-label="Zerar" disabled={busy || !connected || !canWrite} onClick={()=>void run(()=>commands.reset(part.id))}>↺</button>
             </li>;
           })}</ul>
-          {!meeting?.parts.length && <p className="rc-empty">{roomNow==='b'?'Importe o PDF na aba Programação. Todas as datas serão preparadas automaticamente.':'O operador ainda não carregou a reunião.'}</p>}
+          {!meeting?.parts.length && <p className="rc-empty">{roomNow==='b'?'Sem programação para esta sala. Sincronize com o Mapas JW na aba Programação.':'O operador ainda não carregou a reunião.'}</p>}
         </>}
         {tab==='programacao' && <section className="rc-tab-section">
           {weekendNotice}
           {roomSelector}
           {weekInfo}
-          <div className="rc-tools"><button className="secondary" disabled={!connected || busy || !canWrite} onClick={()=>setProgramme(true)}>Editar programação e nomes</button></div>
+          <div className="rc-tools"><button className="secondary" disabled={!connected || busy || !canWrite} onClick={()=>setProgramme(true)}>Sincronizar ou editar</button></div>
           {!canWrite && <p className="small muted">Somente leitura — a edição exige liberação do operador para esta sala.</p>}
           <ul className="rc-list">{meeting?.parts.map(part=><li key={part.id} className="rc-row rc-row-plain"><div className="rc-rowmain"><span className="rc-sec">{part.section}</span><span className="rc-rowtitle rc-wrap">{part.title}</span><span className="small muted">{[state.details?.assignments[part.id]?.name,state.details?.assignments[part.id]?.secondName].filter(Boolean).join(' / ')}</span></div><span className="rc-rem">{fmtClock(part.allottedSec)}</span></li>)}</ul>
-          {!meeting?.parts.length && <p className="rc-empty">{roomNow==='b'?'Importe o PDF em “Editar programação e nomes”. Todas as datas serão preparadas automaticamente.':'O operador ainda não carregou a reunião.'}</p>}
+          {!meeting?.parts.length && <p className="rc-empty">{roomNow==='b'?'Sem programação para esta sala. Toque em “Sincronizar ou editar” para buscar no Mapas JW.':'O operador ainda não carregou a reunião.'}</p>}
           {programme && connected && canWrite && <RemoteProgrammePanel key={roomNow} room={roomNow} state={state} close={()=>setProgramme(false)} changed={()=>{}} />}
         </section>}
         {tab==='assistencia' && <RemoteAttendance standalone connected={connected} canWrite={state.access!=='readonly'} onError={setError} />}

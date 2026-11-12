@@ -101,7 +101,8 @@ Sala B, o dirigente da Sala B e o presidente. A leitura roda ~15 s depois de abr
 a cada 6 horas, ao parear e sob demanda (**Ler a programação agora**, no painel do
 Mapas JW). Cobre 6 semanas a partir da segunda-feira atual.
 
-- O PDF continua funcionando; a leitura do Mapas JW substitui a mesma data/tipo.
+- No celular (PWA) a programação vem só do Mapas JW (**Sincronizar**) ou de edição à mão; o PDF
+  continua aceito apenas no painel do computador, e a leitura do Mapas JW substitui a mesma data/tipo.
 - Nome editado à mão no painel (parte ou dirigente da Sala B) **não é sobrescrito** pela
   leitura seguinte (`manual` / `conductorBManual`). O presidente só é preenchido se ainda
   não houver um salvo.
