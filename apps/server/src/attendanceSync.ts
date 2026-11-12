@@ -32,8 +32,27 @@ export interface SyncLogger {
   error(obj: object, msg: string): void;
 }
 
+/** Operações da fila de que o worker precisa: o `Db` (assistência) e a `OutboxTable` (cronômetro) as implementam. */
+export interface OutboxPort {
+  outboxNextDue(nowIso: string): OutboxRow | null;
+  outboxEarliestPending(): string | null;
+  outboxMarkSent(id: number, nowIso: string): void;
+  outboxMarkRetry(id: number, attempts: number, nextIso: string, error: string): void;
+  outboxMarkFailed(id: number, attempts: number, error: string): void;
+  outboxCounts(): { pending: number; failed: number };
+  outboxLastSentAt(): string | null;
+  outboxList(limit?: number): OutboxRow[];
+  outboxPrune(olderThanIso: string): number;
+}
+
 export interface SyncDeps {
   db: Db;
+  /** Fila usada pelo worker; padrão = a da assistência (no `db`). */
+  outbox?: OutboxPort;
+  /** Rota do Mapas JW; padrão = assistência. */
+  path?: string;
+  /** Nome do dado para logs/erros; padrão = "assistência". */
+  label?: string;
   logger: SyncLogger;
   getMeeting: () => MeetingSchedule;
   appVersion: string;
@@ -49,19 +68,21 @@ interface LastError { message: string; at: string; permanent: boolean; httpStatu
 interface LastResult { date: string; tipo: string; atualizado: boolean | null; motivo: string | null; at: string }
 
 export class AttendanceSync {
+  protected get box(): OutboxPort { return this.d.outbox ?? this.d.db; }
+  protected get label(): string { return this.d.label ?? "assistência"; }
   private timer: NodeJS.Timeout | null = null;
   private running = false;
-  private stopped = true;
+  protected stopped = true;
   private abort: AbortController | null = null;
   private lastAttemptAt: string | null = null;
   private lastError: LastError | null = null;
   private lastResult: LastResult | null = null;
   private warnedInactive = false;
 
-  constructor(private readonly d: SyncDeps) {}
+  constructor(protected readonly d: SyncDeps) {}
 
-  private now(): Date { return (this.d.now ?? (() => new Date()))(); }
-  private resolve() { return resolveMapasJwConfigWithSource(this.d.db, this.d.env ?? process.env); }
+  protected now(): Date { return (this.d.now ?? (() => new Date()))(); }
+  protected resolve() { return resolveMapasJwConfigWithSource(this.d.db, this.d.env ?? process.env); }
 
   /** Configuração atual (recarregada a cada chamada) ou null => push inativo. */
   isActive(): boolean { return this.resolve() !== null; }
@@ -99,12 +120,12 @@ export class AttendanceSync {
 
   start(): void {
     this.stopped = false;
-    try { this.d.db.outboxPrune(new Date(this.now().getTime() - KEEP_HISTORY_MS).toISOString()); } catch { /* best-effort */ }
+    try { this.box.outboxPrune(new Date(this.now().getTime() - KEEP_HISTORY_MS).toISOString()); } catch { /* best-effort */ }
     const active = this.resolve();
     if (active) {
-      this.d.logger.info({}, `Push de assistência para o Mapas JW ativo (instância "${active.config.instancia}", origem ${active.source})`);
+      this.d.logger.info({}, `Push de ${this.label} para o Mapas JW ativo (instância "${active.config.instancia}", origem ${active.source})`);
     } else {
-      this.d.logger.info({}, "Push de assistência para o Mapas JW inativo (integração opcional, sem configuração)");
+      this.d.logger.info({}, `Push de ${this.label} para o Mapas JW inativo (integração opcional, sem configuração)`);
     }
     this.schedule(0);
   }
@@ -116,7 +137,7 @@ export class AttendanceSync {
     this.abort?.abort();
   }
 
-  private schedule(delayMs: number): void {
+  protected schedule(delayMs: number): void {
     if (this.stopped) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.run(), Math.max(0, delayMs));
@@ -128,11 +149,11 @@ export class AttendanceSync {
     this.running = true;
     let result: TickResult = "idle";
     try { result = await this.tick(); }
-    catch (err) { this.d.logger.error({}, `Falha inesperada no envio de assistência: ${String(err)}`); result = "retry"; }
+    catch (err) { this.d.logger.error({}, `Falha inesperada no envio de ${this.label}: ${String(err)}`); result = "retry"; }
     finally { this.running = false; }
     if (this.stopped) return;
     if (result === "sent" || result === "failed") return this.schedule(0);
-    const earliest = this.d.db.outboxEarliestPending();
+    const earliest = this.box.outboxEarliestPending();
     if (!earliest) return; // fila vazia: o próximo enqueue acorda o worker
     if (result === "inactive" || result === "paused") return this.schedule(IDLE_POLL_MS);
     this.schedule(Math.min(Math.max(Date.parse(earliest) - this.now().getTime(), 250), IDLE_POLL_MS));
@@ -142,7 +163,7 @@ export class AttendanceSync {
   async tick(): Promise<TickResult> {
     const resolved = this.resolve();
     if (!resolved) {
-      if (!this.warnedInactive && this.d.db.outboxCounts().pending > 0) {
+      if (!this.warnedInactive && this.box.outboxCounts().pending > 0) {
         this.warnedInactive = true;
         this.d.logger.warn({}, "Mapas JW sem configuração: itens pendentes aguardam o pareamento");
       }
@@ -151,7 +172,7 @@ export class AttendanceSync {
     this.warnedInactive = false;
     const { config: cfg } = resolved;
     if (this.authFailed(cfg)) return "paused"; // token recusado: só retoma com outro token
-    const row = this.d.db.outboxNextDue(this.now().toISOString());
+    const row = this.box.outboxNextDue(this.now().toISOString());
     if (!row) return "idle";
     // Trava de destino: item montado para outra URL/token (ou de origem desconhecida) nunca é entregue a esta.
     if (row.destino !== destinoFingerprint(cfg)) {
@@ -171,9 +192,9 @@ export class AttendanceSync {
 
   private permanent(row: OutboxRow, message: string, httpStatus: number | null): void {
     const at = this.now().toISOString();
-    this.d.db.outboxMarkFailed(row.id, row.attempts + 1, message);
+    this.box.outboxMarkFailed(row.id, row.attempts + 1, message);
     this.lastError = { message, at, permanent: true, httpStatus };
-    this.d.logger.error({}, `Mapas JW recusou a assistência de ${row.date} (${row.tipo}) de forma permanente: ${message}`);
+    this.d.logger.error({}, `Mapas JW recusou ${this.label} de ${row.date} (${row.tipo}) de forma permanente: ${message}`);
   }
 
   private async send(row: OutboxRow, cfg: MapasJwConfig): Promise<TickResult> {
@@ -185,7 +206,7 @@ export class AttendanceSync {
     const signals = [this.abort.signal, AbortSignal.timeout(this.d.timeoutMs ?? REQUEST_TIMEOUT_MS)];
     let res: Response;
     try {
-      res = await doFetch(`${cfg.baseUrl}${ATTENDANCE_PATH}`, {
+      res = await doFetch(`${cfg.baseUrl}${this.d.path ?? ATTENDANCE_PATH}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(payload),
@@ -202,13 +223,13 @@ export class AttendanceSync {
     try { body = (await res.json()) as Record<string, unknown>; } catch { /* corpo não-JSON */ }
 
     if (status >= 200 && status < 300) {
-      this.d.db.outboxMarkSent(row.id, this.now().toISOString());
+      this.box.outboxMarkSent(row.id, this.now().toISOString());
       if (this.d.db.getKv(MAPASJW_AUTH_KEY)) this.d.db.deleteKv(MAPASJW_AUTH_KEY);
       const atualizado = typeof body?.atualizado === "boolean" ? body.atualizado : null;
       const motivo = typeof body?.motivo === "string" ? body.motivo : null;
       this.lastResult = { date: row.date, tipo: row.tipo, atualizado, motivo, at: this.now().toISOString() };
       this.lastError = null;
-      this.d.logger.info({}, `Assistência de ${row.date} (${row.tipo}) enviada ao Mapas JW` +
+      this.d.logger.info({}, `${this.label} de ${row.date} (${row.tipo}) enviado(a) ao Mapas JW` +
         (atualizado === false ? ` — não aplicada pelo servidor (${motivo ?? "sem motivo"})` : ""));
       return "sent";
     }
@@ -232,16 +253,16 @@ export class AttendanceSync {
     const attempts = row.attempts + 1;
     const wait = Math.min(Math.max(backoffMs(attempts), retryAfterMs ?? 0), BACKOFF_MAX_MS);
     const next = new Date(this.now().getTime() + wait).toISOString();
-    this.d.db.outboxMarkRetry(row.id, attempts, next, message);
+    this.box.outboxMarkRetry(row.id, attempts, next, message);
     this.lastError = { message, at: this.now().toISOString(), permanent: false, httpStatus };
-    this.d.logger.warn({}, `Mapas JW: envio da assistência de ${row.date} falhou (${message}); tentativa ${attempts}, nova em ${Math.round(wait / 1000)} s`);
+    this.d.logger.warn({}, `Mapas JW: envio de ${this.label} de ${row.date} falhou (${message}); tentativa ${attempts}, nova em ${Math.round(wait / 1000)} s`);
     return "retry";
   }
 
   /** Estado observável para o painel do operador. Nunca inclui URL nem token. */
   status() {
     const resolved = this.resolve();
-    const counts = this.d.db.outboxCounts();
+    const counts = this.box.outboxCounts();
     const state: "disabled" | "connected" | "disconnected" = !resolved
       ? "disabled"
       : this.authFailed(resolved.config) ? "disconnected" : "connected";
@@ -256,11 +277,11 @@ export class AttendanceSync {
       pending: counts.pending,
       failed: counts.failed,
       lastAttemptAt: this.lastAttemptAt,
-      lastSuccessAt: this.d.db.outboxLastSentAt(),
-      nextAttemptAt: this.d.db.outboxEarliestPending(),
+      lastSuccessAt: this.box.outboxLastSentAt(),
+      nextAttemptAt: this.box.outboxEarliestPending(),
       lastError: this.lastError,
       lastResult: this.lastResult,
-      recent: this.d.db.outboxList(10).map((r) => ({
+      recent: this.box.outboxList(10).map((r) => ({
         id: r.id, date: r.date, tipo: r.tipo, status: r.status, attempts: r.attempts,
         lastError: r.lastError, createdAt: r.createdAt, sentAt: r.sentAt,
       })),

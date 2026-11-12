@@ -392,7 +392,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   // Rotas estáticas (today, sync) têm prioridade sobre :date no roteador.
   app.get("/api/v1/attendance/today", viewer, async () => ctx.todayAttendance());
   // Estado do push para o Mapas JW (admin: traz erros e contagens; nunca URL nem token).
-  app.get("/api/v1/attendance/sync", admin, async () => ctx.attendanceSync.status());
+  app.get("/api/v1/attendance/sync", admin, async () => ({ ...ctx.attendanceSync.status(), cronometro: ctx.timerSync.status() }));
   // Pareamento com o Mapas JW (admin; escrita exige Origin == Host). Nunca devolve token, segredo nem URL.
   app.post("/api/v1/mapasjw/pair", remoteAdmin, async (req, reply) => {
     const b = (req.body ?? {}) as { baseUrl?: unknown; nome?: unknown; slug?: unknown };

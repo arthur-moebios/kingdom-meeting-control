@@ -39,7 +39,13 @@ export interface MapasJwPairStatus {
   codigo?: string | null; expiraEm?: string; nome?: string; slug?: string; mensagem?: string | null; erroTransitorio?: string | null;
 }
 export interface MapasJwProgrammeStatus { active: boolean; lastAt: string | null; lastResult: 'inactive' | 'paused' | 'ok' | 'error' | null; lastError: string | null; weeks: number; programmes: number }
+export interface MapasJwTimerSyncStatus {
+  pending: number; failed: number; lastSuccessAt: string | null; lastAttemptAt: string | null; nextAttemptAt: string | null;
+  lastError: { message: string; at: string; permanent: boolean; httpStatus: number | null } | null;
+}
 export interface MapasJwSyncStatus {
+  /** Estado do envio do cronômetro (ausente no disconnect). */
+  cronometro?: MapasJwTimerSyncStatus;
   enabled: boolean; state: 'disabled' | 'connected' | 'disconnected'; source: 'store' | 'env' | null; instancia: string | null;
   pending: number; failed: number; lastAttemptAt: string | null; lastSuccessAt: string | null; nextAttemptAt: string | null;
   lastError: { message: string; at: string; permanent: boolean; httpStatus: number | null } | null;

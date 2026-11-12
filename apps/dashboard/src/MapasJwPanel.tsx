@@ -57,6 +57,10 @@ export function MapasJwPanel() {
       <li>Pendentes de envio: {sync.pending}{sync.failed > 0 ? ` · com falha permanente: ${sync.failed}` : ''}</li>
       <li>Último envio com sucesso: {fmt(sync.lastSuccessAt)}</li>
       {sync.lastError && <li className="err">Último erro ({fmt(sync.lastError.at)}): {sync.lastError.message}</li>}
+      {sync.cronometro && <>
+        <li>Cronômetro (histórico das partes): pendentes {sync.cronometro.pending}{sync.cronometro.failed > 0 ? ` · com falha permanente: ${sync.cronometro.failed}` : ''} · último envio com sucesso: {fmt(sync.cronometro.lastSuccessAt)}</li>
+        {sync.cronometro.lastError && <li className="err">Cronômetro, último erro ({fmt(sync.cronometro.lastError.at)}): {sync.cronometro.lastError.message}</li>}
+      </>}
     </ul>}
 
     {connected && programme && <div className="small" style={{ margin: '6px 0' }}>

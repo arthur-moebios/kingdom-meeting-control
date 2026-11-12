@@ -30,8 +30,80 @@ export interface OutboxRow {
   destino: string | null;
 }
 
+/**
+ * Fila de envio (outbox) em tabela própria, com o mesmo esquema e as mesmas operações da assistência.
+ * Usada pelo cronômetro: tabela irmã, sem tocar na `attendance_outbox`.
+ */
+export class OutboxTable {
+  constructor(private readonly db: DatabaseSync, private readonly table: string) {
+    if (!/^[a-z_]+$/.test(table)) throw new Error("nome de tabela inválido");
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS ${table} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        nextAttemptAt TEXT NOT NULL,
+        lastError TEXT,
+        createdAt TEXT NOT NULL,
+        sentAt TEXT,
+        destino TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_${table}_status ON ${table}(status, nextAttemptAt);
+    `);
+  }
+  /** Pendentes do mesmo (date,tipo) são substituídos: o estado mais recente vence. */
+  outboxEnqueue(date: string, tipo: string, payload: string, nowIso: string, destino: string): number {
+    this.db.prepare(`DELETE FROM ${this.table} WHERE date = ? AND tipo = ? AND status = 'pending'`).run(date, tipo);
+    const info = this.db
+      .prepare(`INSERT INTO ${this.table} (date, tipo, payload, nextAttemptAt, createdAt, destino) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(date, tipo, payload, nowIso, nowIso, destino);
+    return Number(info.lastInsertRowid);
+  }
+  outboxDiscardPending(): number {
+    return Number(this.db.prepare(`DELETE FROM ${this.table} WHERE status = 'pending'`).run().changes);
+  }
+  outboxNextDue(nowIso: string): OutboxRow | null {
+    return (this.db.prepare(`SELECT * FROM ${this.table} WHERE status = 'pending' AND nextAttemptAt <= ? ORDER BY id LIMIT 1`)
+      .get(nowIso) as OutboxRow | undefined) ?? null;
+  }
+  outboxEarliestPending(): string | null {
+    const row = this.db.prepare(`SELECT MIN(nextAttemptAt) AS t FROM ${this.table} WHERE status = 'pending'`).get() as { t: string | null };
+    return row.t ?? null;
+  }
+  outboxMarkSent(id: number, nowIso: string): void {
+    this.db.prepare(`UPDATE ${this.table} SET status = 'sent', sentAt = ?, lastError = NULL WHERE id = ? AND status = 'pending'`).run(nowIso, id);
+  }
+  outboxMarkRetry(id: number, attempts: number, nextIso: string, error: string): void {
+    this.db.prepare(`UPDATE ${this.table} SET attempts = ?, nextAttemptAt = ?, lastError = ? WHERE id = ? AND status = 'pending'`).run(attempts, nextIso, error, id);
+  }
+  outboxMarkFailed(id: number, attempts: number, error: string): void {
+    this.db.prepare(`UPDATE ${this.table} SET status = 'failed', attempts = ?, lastError = ? WHERE id = ? AND status = 'pending'`).run(attempts, error, id);
+  }
+  outboxCounts(): { pending: number; failed: number } {
+    const rows = this.db.prepare(`SELECT status, COUNT(*) AS n FROM ${this.table} WHERE status IN ('pending','failed') GROUP BY status`)
+      .all() as { status: string; n: number }[];
+    const n = (st: string) => Number(rows.find((r) => r.status === st)?.n ?? 0);
+    return { pending: n("pending"), failed: n("failed") };
+  }
+  outboxLastSentAt(): string | null {
+    const row = this.db.prepare(`SELECT MAX(sentAt) AS t FROM ${this.table}`).get() as { t: string | null };
+    return row.t ?? null;
+  }
+  outboxList(limit = 50): OutboxRow[] {
+    return this.db.prepare(`SELECT * FROM ${this.table} ORDER BY id DESC LIMIT ?`).all(limit) as unknown as OutboxRow[];
+  }
+  outboxPrune(olderThanIso: string): number {
+    return Number(this.db.prepare(`DELETE FROM ${this.table} WHERE status != 'pending' AND createdAt < ?`).run(olderThanIso).changes);
+  }
+}
+
 export class Db {
   private db: DatabaseSync;
+  /** Fila do cronômetro (tabela irmã da assistência). */
+  readonly timerOutbox: OutboxTable;
 
   constructor(dbPath: string) {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -81,7 +153,16 @@ export class Db {
         sentAt TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_attendance_outbox_status ON attendance_outbox(status, nextAttemptAt);
+      CREATE TABLE IF NOT EXISTS timer_history (
+        date TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        room TEXT NOT NULL,
+        json TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        PRIMARY KEY (date, tipo, room)
+      );
     `);
+    this.timerOutbox = new OutboxTable(this.db, "timer_outbox");
     // Migração: bancos criados antes da marca de destino ganham a coluna (itens antigos ficam com NULL e são recusados no envio).
     const cols = this.db.prepare("PRAGMA table_info(attendance_outbox)").all() as { name: string }[];
     if (!cols.some((c) => c.name === "destino")) this.db.exec("ALTER TABLE attendance_outbox ADD COLUMN destino TEXT");
@@ -167,7 +248,7 @@ export class Db {
 
   /** Descarta os envios ainda pendentes (montados para um destino que deixou de valer). Devolve quantos. */
   outboxDiscardPending(): number {
-    return Number(this.db.prepare("DELETE FROM attendance_outbox WHERE status = 'pending'").run().changes);
+    return Number(this.db.prepare("DELETE FROM attendance_outbox WHERE status = 'pending'").run().changes) + this.timerOutbox.outboxDiscardPending();
   }
 
   outboxNextDue(nowIso: string): OutboxRow | null {
@@ -224,6 +305,30 @@ export class Db {
   outboxPrune(olderThanIso: string): number {
     const info = this.db.prepare("DELETE FROM attendance_outbox WHERE status != 'pending' AND createdAt < ?").run(olderThanIso);
     return Number(info.changes);
+  }
+
+  // -- histórico do cronômetro (medições consolidadas por reunião e sala) ----
+
+  getTimerSnapshot(date: string, tipo: string, room: string): string | null {
+    const row = this.db.prepare("SELECT json FROM timer_history WHERE date = ? AND tipo = ? AND room = ?").get(date, tipo, room) as { json: string } | undefined;
+    return row?.json ?? null;
+  }
+
+  putTimerSnapshot(date: string, tipo: string, room: string, json: string, nowIso: string): void {
+    this.db.prepare(
+      "INSERT INTO timer_history (date, tipo, room, json, updatedAt) VALUES (?, ?, ?, ?, ?) " +
+        "ON CONFLICT(date, tipo, room) DO UPDATE SET json = excluded.json, updatedAt = excluded.updatedAt",
+    ).run(date, tipo, room, json, nowIso);
+  }
+
+  /** Snapshots com data >= `sinceDate` (YYYY-MM-DD). */
+  listTimerSnapshotsSince(sinceDate: string): { date: string; tipo: string; room: string }[] {
+    return this.db.prepare("SELECT date, tipo, room FROM timer_history WHERE date >= ? ORDER BY date, tipo, room")
+      .all(sinceDate) as { date: string; tipo: string; room: string }[];
+  }
+
+  pruneTimerHistory(beforeDate: string): number {
+    return Number(this.db.prepare("DELETE FROM timer_history WHERE date < ?").run(beforeDate).changes);
   }
 
   // -- settings --------------------------------------------------------------

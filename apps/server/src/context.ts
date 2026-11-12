@@ -19,6 +19,8 @@ import type { LogRingBuffer } from "./logger.js";
 import { APP_VERSION, checkLatest, type UpdateInfo } from './update.js';
 import { consolidateAttendance, localDate, zoomAttendance } from './attendance.js';
 import { AttendanceSync } from './attendanceSync.js';
+import { TimerSync } from './timerSync.js';
+import { TimerHistory } from './timerHistory.js';
 import { MapasJwPairing } from './mapasjwPairing.js';
 import { MapasJwProgrammeSync } from './mapasjwProgramme.js';
 import { MediaPlaylist } from './mediaPlaylist.js';
@@ -40,6 +42,8 @@ export class AppContext {
   readonly programmes: MobileProgrammes;
   /** Push opcional da assistência para o Mapas JW (inativo sem configuração). */
   readonly attendanceSync: AttendanceSync;
+  readonly timerSync: TimerSync;
+  readonly timerHistory: TimerHistory;
   /** Pareamento opcional com o Mapas JW (sem solicitação pendente não faz rede). */
   readonly mapasjwPairing: MapasJwPairing;
   readonly programmeSync: MapasJwProgrammeSync;
@@ -69,12 +73,20 @@ export class AppContext {
       getMeeting: () => this.meeting.getState(),
       appVersion: APP_VERSION,
     });
+    this.timerHistory = new TimerHistory({
+      db: this.db,
+      getMeeting: (room) => this.programmes.service(room).getState(),
+      getDate: (room) => this.programmes.meetingDate(room),
+      getAssignments: (room) => this.programmes.assignmentsOf(room),
+      onChange: (date, tipo, room) => this.timerSync.enqueueSnapshot(date, tipo, room),
+    });
+    this.timerSync = new TimerSync({ db: this.db, logger, getMeeting: () => this.meeting.getState(), appVersion: APP_VERSION }, this.timerHistory);
     this.mapasjwPairing = new MapasJwPairing({
       db: this.db,
       logger,
       appVersion: APP_VERSION,
       // O item que levou 401 não é reenviado sozinho: manda o estado atual de hoje.
-      onPaired: () => { this.attendanceSync.enqueue(localDate()); void this.programmeSync.sync(); },
+      onPaired: () => { this.attendanceSync.enqueue(localDate()); this.timerSync.enqueueRecent(); void this.programmeSync.sync(); },
     });
     // Cada mudança real da assistência vira (no máximo) um item colapsado no outbox.
     this.bus.subscribe((ev) => {
@@ -129,10 +141,18 @@ export class AppContext {
     });
     this.cloudflare = new CloudflareIntegration(repoRoot,cfg.dataDir);
     this.programmes = new MobileProgrammes(this);
+    // Cada mudança do cronômetro (Salão Principal ou Sala B) consolida medições no histórico; o histórico enfileira o envio.
+    this.bus.subscribe((ev) => { if (ev.type === "meeting.updated" || ev.type === "meeting.loaded") this.observeTimers("main"); });
+    this.programmes.subscribe((room) => { if (room === "b") this.observeTimers("b"); });
     // Com o KMC pareado, lê a programação (partes, minutos, nomes e Sala B) do Mapas JW.
     this.programmeSync = new MapasJwProgrammeSync({ db: this.db, logger, apply: (programmes) => { this.programmes.applyMapasJw(programmes); } });
     this.media = new MediaPlaylist({ dir: path.join(cfg.dataDir, 'media') });
     this.mobile = new MobileTimers(this);
+  }
+
+  private observeTimers(room: "main" | "b", live = false): void {
+    try { this.timerHistory.observe(room, live); }
+    catch (err) { this.logger.warn({ err: String(err) }, "histórico do cronômetro: falha ao observar"); }
   }
 
   getUpdateStatus(): UpdateInfo | null {
@@ -300,6 +320,7 @@ export class AppContext {
   /** Startup side-effects: begin monitoring, launch browser, optional auto-join. */
   async bootstrap(): Promise<void> {
     this.attendanceSync.start();
+    this.timerSync.start();
     this.mapasjwPairing.start();
     this.programmeSync.start();
     // Conecta ao OBS se a integração estiver ligada (não-fatal; reconecta sozinho).
@@ -385,7 +406,9 @@ export class AppContext {
   }
 
   async shutdown(): Promise<void> {
+    for (const room of ["main", "b"] as const) this.observeTimers(room, true); // partes ainda correndo
     this.attendanceSync.stop();
+    this.timerSync.stop();
     this.programmeSync.stop();
     this.mapasjwPairing.stop();
     this.cloudflare.close();

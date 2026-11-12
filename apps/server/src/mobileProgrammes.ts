@@ -80,6 +80,22 @@ export class MobileProgrammes {
       matchesMainWeek:!mainWeek || !week || weekKey(mainWeek)===weekKey(week)},warnSeconds:this.ctx.getSettings().meetingSchedule.warnSeconds,serverNow:new Date().toISOString()};
   }
   list() {return structuredClone(this.library);}
+  /** Data da programação carregada na sala, sem efeitos colaterais; null se os nomes salvos não são da programação atual. */
+  meetingDate(room:TimerRoom):string|null {
+    try {
+      const value=JSON.parse(this.ctx.db.getKv('mobile.details.'+room) || '{}') as SavedDetails;
+      const ids=this.service(room).getState().parts.map(p=>p.id);
+      return typeof value.date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value.date) && JSON.stringify(value.partIds)===JSON.stringify(ids)?value.date:null;
+    }catch{return null;}
+  }
+  /** Designados salvos (sem efeitos colaterais). */
+  assignmentsOf(room:TimerRoom):Record<string,{name:string;secondName:string}> {
+    try {
+      const value=JSON.parse(this.ctx.db.getKv('mobile.details.'+room) || '{}') as SavedDetails;
+      const ids=this.service(room).getState().parts.map(p=>p.id);
+      return JSON.stringify(value.partIds)===JSON.stringify(ids) && value.assignments?value.assignments:{};
+    }catch{return {};}
+  }
   mainAssignments() {return structuredClone(this.details('main').assignments);}
   private today() {const now=new Date();return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;}
   private ensureProgramme(room:TimerRoom,force=false) {
