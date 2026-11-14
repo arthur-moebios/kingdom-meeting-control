@@ -18,9 +18,18 @@ export function parseApplyError(e: unknown): ApplyFailure {
 export function UpdateNotice() {
   const [info, setInfo] = useState<UpdateStatus | null>(null);
   const [state, setState] = useState<'idle' | 'busy' | 'started'>('idle'), [error, setError] = useState<ApplyFailure | null>(null);
-  const [started, setStarted] = useState<UpdateApplyResult | null>(null);
+  const [started, setStarted] = useState<UpdateApplyResult | null>(null), [checking, setChecking] = useState(false), [checkedMsg, setCheckedMsg] = useState<string | null>(null);
   useEffect(() => { api.updateStatus().then(setInfo).catch(() => void 0); }, []);
   if (!info) return null;
+  async function check() {
+    setChecking(true); setCheckedMsg(null);
+    try {
+      const next = await api.updateCheck();
+      setInfo(next);
+      setCheckedMsg(next.error ? `Não foi possível verificar: ${next.error}` : next.available ? null : `Você já está na versão mais recente (${next.current}).`);
+    } catch (e) { setCheckedMsg(`Não foi possível verificar: ${parseApplyError(e).message}`); }
+    finally { setChecking(false); }
+  }
   async function apply() {
     if (!window.confirm('Baixar e instalar a nova versão? O app será fechado e reaberto.')) return;
     setState('busy'); setError(null);
@@ -34,5 +43,7 @@ export function UpdateNotice() {
     {error && <span role="alert" style={{ color: '#b91c1c' }}> {error.message}
       {error.installerPath && <><br />O instalador já foi baixado em <code>{error.installerPath}</code>. Feche o app e execute-o à mão.</>}
       {error.logPath && <><br />Log: <code>{error.logPath}</code></>}</span>}</span>;
-  return <span className="small muted" title={info.error ?? undefined}>Atualizado (versão {info.current})</span>;
+  return <span className="small muted" title={info.error ?? undefined}>{info.error ? `Versão ${info.current} · não foi possível verificar` : `Atualizado (versão ${info.current})`}{' '}
+    <button className="secondary small" disabled={checking} onClick={() => void check()}>{checking ? 'Verificando…' : 'Verificar atualizações'}</button>
+    {checkedMsg && <span role="status"> {checkedMsg}</span>}</span>;
 }
