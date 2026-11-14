@@ -17,6 +17,7 @@ export const remoteApi={
   reset:(id:string)=>request<RemoteTimerState>('part/'+encodeURIComponent(id)+'/reset',{}),
 };
 /** Mídias → playlist do JW Library (só para aparelhos com o papel Painel). */
+export const publishersApi={names:()=>request<{names:string[]}>('publishers').then(r=>r.names)};
 export const mediaApi={
   state:()=>request<RemoteMediaState>('media'),
   image:(body:{filename:string;data:string;thumb:string})=>request<RemoteMediaState>('media/image',body,90000),

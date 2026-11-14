@@ -23,8 +23,8 @@ export async function programmeImage(state:RemoteTimerState,now:number):Promise<
     const l=wrap(left,640,font),r=wrap(right,625,rightFont),top=y,height=Math.max(l.length,r.length,1)*32+16;
     blocks.push({height,draw:()=>{ctx.fillStyle=color;ctx.font=font;l.forEach((text,i)=>ctx.fillText(text,margin+10,top+i*32));ctx.font=rightFont;r.forEach((text,i)=>ctx.fillText(text,margin+735,top+i*32));}});y+=height;
   };
-  if(state.details?.conductor)row('','Dirigente: '+state.details.conductor,'20px Arial');
-  if(state.details?.helper)row('','Ajudante: '+state.details.helper,'20px Arial');
+  if(state.details?.conductor)row('',(state.meeting.kind==='weekend'?'Presidente: ':'Dirigente: ')+state.details.conductor,'20px Arial');
+  if(state.details?.helper && state.meeting.kind!=='weekend')row('','Ajudante: '+state.details.helper,'20px Arial');
   let section='';
   state.meeting.parts.forEach((part,index)=> {
     if(part.section!==section){section=part.section;const top=y+14,label=section,color=sectionColor(section);blocks.push({height:64,draw:()=>{ctx.fillStyle=color;ctx.fillRect(margin,top,content,38);ctx.font='bold 20px Arial';ctx.fillStyle='#fff';ctx.fillText(label.toUpperCase(),margin+10,top+8);}});y+=64;}

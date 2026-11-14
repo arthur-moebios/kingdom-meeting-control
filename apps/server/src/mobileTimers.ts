@@ -145,6 +145,11 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
   });
   app.get('/remote-api/programmes',{preHandler:auth},async()=>ctx.programmes?.list() ?? []);
   // O celular não importa mais PDF: a programação vem do Mapas JW (ou é ajustada à mão).
+  // Nomes de publicadores para escolher ao editar designações: só para aparelhos que podem editar alguma sala.
+  app.get('/remote-api/publishers',{preHandler:auth},async(req,reply)=> {
+    if(!service.canWrite(req,'main') && !(service.roomBAvailable() && service.canWrite(req,'b')))return reply.code(403).send({error:'read_only'});
+    return {names:ctx.programmeSync.publishers()};
+  });
   app.post('/remote-api/programmes/sync',{preHandler:commandAuth},async(req,reply)=> {
     const result=await ctx.programmeSync.sync(),status=ctx.programmeSync.status();
     if(result==='inactive')return reply.code(409).send({error:'Este computador ainda não está pareado com o Mapas JW. Peça ao operador para parear.'});

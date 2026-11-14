@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ImportedProgramme, RemoteTimerState, TimerDetails, TimerRoom } from '@kmc/shared-types';
-import { roomApi } from './remoteApi.js';
+import { roomApi, publishersApi } from './remoteApi.js';
 
 export function RemoteProgrammePanel({room,state,close,changed}:{room:TimerRoom;state:RemoteTimerState;close:()=>void;changed:()=>void}) {
   const api=roomApi(room);
@@ -9,6 +9,16 @@ export function RemoteProgrammePanel({room,state,close,changed}:{room:TimerRoom;
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const edit=useRef({ids:'',dirty:false});
   const ids=state.meeting.parts.map(p=>p.id).join(','),serverDetails=JSON.stringify(state.details);
+  const weekend=state.meeting.kind==='weekend';
+  // Sugestões de publicadores (Mapas JW). O campo continua livre: orador de fim de semana costuma ser de outra congregação.
+  const [publishers,setPublishers]=useState<string[]>([]);
+  useEffect(()=>{void publishersApi.names().then(setPublishers).catch(()=>{});},[]);
+  /** Rótulos das caixas de nome. No sábado: Discurso → Orador; A Sentinela → Dirigente e Leitor. */
+  function labelsFor(index:number):{name:string;second:string|null} {
+    if(!weekend)return {name:'Participante',second:'Ajudante / segundo participante'};
+    if(index===0)return {name:'Orador',second:null};
+    return {name:'Dirigente',second:'Leitor'};
+  }
   const available=library.filter(p=>room==='main' || p.roomBParts.length>0);
   useEffect(()=>{void api.list().then(setLibrary).catch(e=>setError(String(e.message)));},[room]);
   useEffect(()=>{
@@ -36,9 +46,13 @@ export function RemoteProgrammePanel({room,state,close,changed}:{room:TimerRoom;
     {library.find(p=>p.date===state.details?.date)?.warnings.filter(w=>!w.includes('Sala B')).map((warning,index)=><p className="small rc-warning" key={index}>{warning}</p>)}
     {room==='b' && <button className="secondary" disabled={busy || state.meeting.parts.some(p=>p.running)} onClick={()=>void run(async()=>{await api.prepareB();changed();close();})}>Copiar partes do ministério da reunião principal e zerar Sala B</button>}
     <details className="rc-name-editor"><summary>Editar nomes à mão</summary>
-      <label>Dirigente<input disabled={busy} value={details.conductor} maxLength={160} onChange={e=>updateDetails({...details,conductor:e.target.value})} /></label>
-      <label>Ajudante<input disabled={busy} value={details.helper} maxLength={160} onChange={e=>updateDetails({...details,helper:e.target.value})} /></label>
-      {state.meeting.parts.map(part=><fieldset key={part.id} disabled={busy}><legend>{part.title}</legend>{(['name','secondName'] as const).map(key=><label key={key}>{key==='name'?'Participante':'Ajudante / segundo participante'}<input maxLength={160} value={details.assignments[part.id]?.[key] ?? ''} onChange={e=>updateDetails(old=>({...old,assignments:{...old.assignments,[part.id]:{...(old.assignments[part.id] ?? {name:'',secondName:''}),[key]:e.target.value}}}))} /></label>)}</fieldset>)}
+      <datalist id="kmc-publishers">{publishers.map(n=><option key={n} value={n} />)}</datalist>
+      <p className="small muted">Escolha um nome da lista ou digite qualquer nome{weekend?' (o orador costuma ser de outra congregação)':''}.</p>
+      {weekend
+        ? <label>Presidente<input list="kmc-publishers" disabled={busy} value={details.conductor} maxLength={160} onChange={e=>updateDetails({...details,conductor:e.target.value})} /></label>
+        : <><label>Dirigente<input list="kmc-publishers" disabled={busy} value={details.conductor} maxLength={160} onChange={e=>updateDetails({...details,conductor:e.target.value})} /></label>
+          <label>Ajudante<input list="kmc-publishers" disabled={busy} value={details.helper} maxLength={160} onChange={e=>updateDetails({...details,helper:e.target.value})} /></label></>}
+      {state.meeting.parts.map((part,index)=>{const labels=labelsFor(index);return <fieldset key={part.id} disabled={busy}><legend>{part.title}</legend>{([['name',labels.name],['secondName',labels.second]] as const).filter(([,label])=>label!==null).map(([key,label])=><label key={key}>{label}<input list="kmc-publishers" maxLength={160} value={details.assignments[part.id]?.[key] ?? ''} onChange={e=>updateDetails(old=>({...old,assignments:{...old.assignments,[part.id]:{...(old.assignments[part.id] ?? {name:'',secondName:''}),[key]:e.target.value}}}))} /></label>)}</fieldset>;})}
       <button disabled={busy} onClick={()=>void run(async()=>{const saved=await api.details(details,state.meeting.parts.map(p=>p.id));edit.current.dirty=false;if(saved.details)setDetails(structuredClone(saved.details));changed();},'Nomes salvos no computador para esta sala e data.')}>Salvar nomes</button>
     </details>
   </section></div>;

@@ -11,6 +11,8 @@ import { MAPASJW_AUTH_KEY, resolveMapasJwConfigWithSource, tokenFingerprint, typ
  * nunca é sobrescrito por esta leitura (ver `mergeSynced`).
  */
 export const PROGRAMME_PATH = '/api/kmc/programacao';
+export const PUBLISHERS_PATH = '/api/kmc/publicadores';
+export const PUBLISHERS_KEY = 'mapasjw.publishers';
 export const SYNC_FIRST_MS = 15_000;
 export const SYNC_EVERY_MS = 6 * 60 * 60_000;
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -165,6 +167,7 @@ export class MapasJwProgrammeSync {
       const body = (await res.json()) as ApiProgramme;
       const programmes = programmesFromMapasJw(body);
       if (programmes.length) this.d.apply(programmes);
+      await this.syncPublishers(cfg);
       this.d.logger.info({}, `Programação lida do Mapas JW: ${programmes.length} reunião(ões) em ${body.semanas?.length ?? 0} semana(s)`);
       return this.finish('ok', at, null, body.semanas?.length ?? 0, programmes.length);
     } catch (err) {
@@ -173,6 +176,22 @@ export class MapasJwProgrammeSync {
       this.d.logger.warn({}, `Leitura da programação do Mapas JW falhou: ${message}`);
       return this.finish('error', at, message, 0, 0);
     } finally { this.running = false; }
+  }
+
+  /** Lista de publicadores para escolher ao editar nomes. Melhor esforço: se falhar, fica a última lista guardada. */
+  private async syncPublishers(cfg: { baseUrl: string; token: string }): Promise<void> {
+    try {
+      const res = await (this.d.fetch ?? fetch)(`${cfg.baseUrl}${PUBLISHERS_PATH}`, { headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(this.d.timeoutMs ?? REQUEST_TIMEOUT_MS) });
+      if (!res.ok) return;
+      const body = (await res.json()) as { nomes?: unknown };
+      if (!Array.isArray(body.nomes)) return;
+      const names = [...new Set(body.nomes.filter((n): n is string => typeof n === 'string').map(n => n.trim().slice(0, 160)).filter(Boolean))].slice(0, 1000);
+      if (names.length) this.d.db.setKv(PUBLISHERS_KEY, JSON.stringify(names));
+    } catch { /* sem a lista, a edição segue com texto livre */ }
+  }
+  /** Nomes de publicadores guardados da última leitura. */
+  publishers(): string[] {
+    try { const v = JSON.parse(this.d.db.getKv(PUBLISHERS_KEY) ?? '[]') as unknown; return Array.isArray(v) ? v.filter((n): n is string => typeof n === 'string') : []; } catch { return []; }
   }
 
   private finish(result: ProgrammeSyncResult, at: string, error: string | null, weeks: number, programmes: number): ProgrammeSyncResult {

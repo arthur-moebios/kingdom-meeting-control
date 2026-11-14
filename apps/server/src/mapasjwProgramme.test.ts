@@ -107,6 +107,17 @@ describe('MapasJwProgrammeSync', () => {
     expect(sync.status()).toMatchObject({ active: true, lastResult: 'ok', programmes: 2, weeks: 1, lastError: null });
   });
 
+  it('guarda a lista de publicadores lida do Mapas JW e ignora resposta malformada', async () => {
+    const { db } = kvWith(cfg);
+    const fetcher = vi.fn(async (url: string) => String(url).includes('/publicadores') ? json(200, { nomes: ['ANA', 'ANA', ' BRUNO ', 3] }) : json(200, response));
+    const sync = new MapasJwProgrammeSync({ db, logger, apply: vi.fn(), fetch: fetcher as unknown as typeof fetch, env: {} });
+    await sync.sync();
+    expect(sync.publishers()).toEqual(['ANA', 'BRUNO']);
+    const broken = new MapasJwProgrammeSync({ db, logger, apply: vi.fn(), fetch: (async (url: string) => String(url).includes('/publicadores') ? json(200, { nomes: 'x' }) : json(200, response)) as unknown as typeof fetch, env: {} });
+    await broken.sync();
+    expect(broken.publishers()).toEqual(['ANA', 'BRUNO']);
+  });
+
   it('401 pausa e marca o token como recusado, sem expor o segredo', async () => {
     const { db, map } = kvWith(cfg);
     const sync = new MapasJwProgrammeSync({ db, logger, apply: vi.fn(), fetch: (async () => json(401, { message: 'Token inválido' })) as unknown as typeof fetch, env: {} });
