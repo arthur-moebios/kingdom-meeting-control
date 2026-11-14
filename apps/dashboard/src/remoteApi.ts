@@ -22,6 +22,7 @@ export const mediaApi={
   image:(body:{filename:string;data:string;thumb:string})=>request<RemoteMediaState>('media/image',body,90000),
   song:(body:{number:number;thumb:string})=>request<RemoteMediaState>('media/song',body,20000),
   video:(body:{url:string;thumb:string})=>request<RemoteMediaState>('media/video',body,20000),
+  importPlaylist:(body:{data:string;thumb:string})=>request<RemoteMediaState&{added:number;skipped:number;imported:string}>('media/import',body,180000),
   update:(body:{name?:string;order?:string[];labels?:Record<string,string>;remove?:string[]})=>request<RemoteMediaState>('media/update',body),
   clear:()=>request<RemoteMediaState>('media/clear',{}),
   send:()=>request<RemoteMediaState&{opened:boolean}>('media/send',{},30000),

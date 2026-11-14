@@ -60,7 +60,8 @@ export class MobileTimers {
   /** Dados do painel (nomes, anúncios, assistência). Só chamado para aparelhos com `painel: true`. */
   private painelData(): RemotePainel {
     const hands=this.ctx.zoom.getRaisedHands();
-    return {raisedHands:{order:hands.order.map(({id,displayName,handRaisedAt})=>({id,displayName,handRaisedAt})),orderSource:hands.orderSource,partial:hands.partial},
+    const participants=this.ctx.zoom.listParticipants().slice(0,300).map(({id,displayName,handRaised})=>({id,displayName,handRaised}));
+    return {participants,raisedHands:{order:hands.order.map(({id,displayName,handRaisedAt})=>({id,displayName,handRaisedAt})),orderSource:hands.orderSource,partial:hands.partial},
       announcements:this.ctx.getSettings().tablet.announcements,attendance:this.ctx.recordedAttendance()};
   }
   state(room:TimerRoom='main', req?: Pick<FastifyRequest,'headers'>): RemoteTimerState {
@@ -200,6 +201,7 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     if(isDeviceAccess(access))service.setAccess(target.id,access);
     return service.devicesFor(req);
   });
+  app.post('/remote-api/media/import',{preHandler:mediaWrite,bodyLimit:80_000_000},media(body=>ctx.media.importPlaylist(body)));
   app.post('/remote-api/media/update',{preHandler:mediaWrite,bodyLimit:64_000},media(body=>ctx.media.update(body)));
   app.post('/remote-api/media/clear',{preHandler:mediaWrite,bodyLimit:1024},media(()=>ctx.media.clear()));
   app.post('/remote-api/media/send',{preHandler:mediaWrite,bodyLimit:1024},media(()=> {const {file:_file,...sent}=ctx.media.send();return sent;}));

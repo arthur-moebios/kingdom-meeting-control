@@ -128,3 +128,25 @@ it('the catalogue lookup survives a network failure and ignores what is not a JP
     : new Response('<html>')) as unknown as typeof fetch;
   expect(await lookupJwMedia('pub-x_1_VIDEO', fake)).toEqual({ title: 'Um vídeo', durationTicks: 125_000_000, thumb: null });
 });
+
+it('importa uma playlist .jwlplaylist: acrescenta na ordem, com cântico, vídeo e imagem', async () => {
+  const origin = library();
+  origin.media.addImage({ filename: 'a.jpeg', data: jpeg('a'), thumb: jpeg('t') });
+  await origin.media.addSong({ number: 38, thumb: jpeg('s') });
+  await origin.media.addVideo({ url: 'https://www.jw.org/finder?lank=pub-mwbv_202405_1_VIDEO', thumb: jpeg('v') });
+  origin.media.update({ name: 'Discurso' });
+  const bytes = fs.readFileSync(origin.media.build());
+
+  const target = library();
+  target.media.addImage({ filename: 'b.jpeg', data: jpeg('b'), thumb: jpeg('t') });
+  const result = target.media.importPlaylist({ data: bytes.toString('base64'), thumb: jpeg('f') });
+  expect(result.added).toBe(3); expect(result.skipped).toBe(0);
+  expect(result.items.map(i => i.kind)).toEqual(['image', 'image', 'song', 'video']);
+  expect(result.items[2]!.song).toBe(38);
+  // a lista que já existia mantém o nome; playlist vazia herda o nome importado
+  expect(result.name).not.toBe('Discurso');
+  const fresh = library().media.importPlaylist({ data: bytes.toString('base64'), thumb: jpeg('f') });
+  expect(fresh.name).toBe('Discurso');
+  // reexportar o resultado preserva as referências
+  expect(() => library().media.importPlaylist({ data: Buffer.from('x'.repeat(300)).toString('base64'), thumb: jpeg('f') })).toThrow(/playlist do JW Library/);
+});

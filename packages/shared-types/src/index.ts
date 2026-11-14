@@ -419,7 +419,11 @@ export interface RemotePainelHand { id: string; displayName: string; /** Quando 
  * Dados da aba Painel. Só vão no payload de aparelhos com `painel: true` (papel concedido pelo operador,
  * separado de `DeviceAccess`). Contêm nomes de participantes: nunca enviar a outros aparelhos.
  */
+/** Participante do Zoom como o PWA o recebe: só nome e mão (sem mudo, anfitrião etc.). */
+export interface RemoteParticipant { id: string; displayName: string; handRaised: boolean; }
 export interface RemotePainel {
+  /** Quem está na reunião do Zoom agora (lista do computador do Salão; limitada a 300). */
+  participants: RemoteParticipant[];
   raisedHands: { order: RemotePainelHand[]; orderSource: HandOrderSource; partial: boolean };
   announcements: string;
   /** Assistência de HOJE; null quando nada foi registrado no dia. */

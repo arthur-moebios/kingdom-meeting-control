@@ -31,7 +31,7 @@ function RemoteTimer() {
   function selectTab(next:RemoteTab) {setTab(next);setError(null);try{localStorage.setItem('kmc.remote-tab',next);}catch{}}
   const [programme,setProgramme]=useState(false);
   const [deviceName,setDeviceName]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);
-  const [install,setInstall]=useState<InstallPrompt|null>(null),[standalone,setStandalone]=useState(matchMedia('(display-mode: standalone)').matches);
+  const [install,setInstall]=useState<InstallPrompt|null>(()=>(window as unknown as {__kmcInstall?:InstallPrompt|null}).__kmcInstall??null),[installHidden,setInstallHidden]=useState(()=>{try{return sessionStorage.getItem('kmc.install-hidden')==='1';}catch{return false;}}),[standalone,setStandalone]=useState(matchMedia('(display-mode: standalone)').matches);
   const meeting=state?.meeting,now=useClock(!!meeting?.parts.some(p=>p.running))+offset;
   const canWrite=state?.canWrite!==false;
   // Confirma só ações que alteram uma parte já iniciada (rodando ou com tempo decorrido); pausar nunca confirma.
@@ -44,10 +44,11 @@ function RemoteTimer() {
   useEffect(()=> {
     const prompt=(event:Event)=> {event.preventDefault();setInstall(event as InstallPrompt);};
     const installed=()=> {setStandalone(true);setInstall(null);};
-    window.addEventListener('beforeinstallprompt',prompt);window.addEventListener('appinstalled',installed);
+    const early=()=>{const e=(window as unknown as {__kmcInstall?:InstallPrompt|null}).__kmcInstall;if(e)setInstall(e);};
+    window.addEventListener('beforeinstallprompt',prompt);window.addEventListener('appinstalled',installed);window.addEventListener('kmc-install',early);
     if('serviceWorker' in navigator && window.isSecureContext)void navigator.serviceWorker.register('/remote-sw.js').catch(()=>{});
     if(location.hash)history.replaceState(null,'',location.pathname);
-    return ()=> {window.removeEventListener('beforeinstallprompt',prompt);window.removeEventListener('appinstalled',installed);};
+    return ()=> {window.removeEventListener('beforeinstallprompt',prompt);window.removeEventListener('appinstalled',installed);window.removeEventListener('kmc-install',early);};
   },[]);
   async function run(fn:()=>Promise<unknown>) {
     if(!connected)return;setBusy(true);setError(null);
@@ -64,6 +65,9 @@ function RemoteTimer() {
   const weekInfo=(state?.period?.weekLabel || meeting?.weekLabel) && <div className="rc-week"><b>{state?.period?.weekLabel || meeting?.weekLabel}</b>{state?.period?.dateLabel && <div>{meeting?.kind==='weekend'?'Fim de semana':'Meio de semana'} · {state.period.dateLabel}</div>}</div>;
   return <div className="rc rc-app">
     <header className="rc-head"><span className="rc-title-top">{tab==='cronometro'?'⏱ Cronômetros':TAB_LABELS[tab]}</span><span className={`rc-dot ${connected?'on':''}`} title={connected?'Conectado':'Sem conexão'} /></header>
+    {!standalone && install && !installHidden && <div className="rc-install-banner" role="region" aria-label="Instalar o aplicativo"><span><b>Instalar o app</b><br />Abre em tela cheia, como um aplicativo.</span>
+      <button onClick={async()=>{await install.prompt();const choice=await install.userChoice;(window as unknown as {__kmcInstall?:unknown}).__kmcInstall=null;setInstall(null);if(choice.outcome!=='accepted')setInstallHidden(true);}}>Instalar</button>
+      <button className="secondary" aria-label="Agora não" onClick={()=>{setInstallHidden(true);try{sessionStorage.setItem('kmc.install-hidden','1');}catch{}}}>✕</button></div>}
     {error && <div className="rc-err" role="alert">{error}</div>}
     {pairing ? <form className="rc-pair" onSubmit={pair}><h2>Conectar este aparelho</h2><p>Acesse os cronômetros sem código. O painel do operador permite revogar os aparelhos conectados.</p>
       <label>Nome do aparelho (obrigatório)<input aria-label="Nome do aparelho" required autoComplete="off" maxLength={80} placeholder="Ex.: João — Sala B" value={deviceName} onChange={e=>setDeviceName(e.target.value)} /></label>
@@ -104,7 +108,7 @@ function RemoteTimer() {
           {!meeting?.parts.length && <p className="rc-empty">{roomNow==='b'?'Sem programação para esta sala. Toque em “Sincronizar ou editar” para buscar no Mapas JW.':'O operador ainda não carregou a reunião.'}</p>}
           {programme && connected && canWrite && <RemoteProgrammePanel key={roomNow} room={roomNow} state={state} close={()=>setProgramme(false)} changed={()=>{}} />}
         </section>}
-        {tab==='assistencia' && <RemoteAttendance standalone connected={connected} canWrite={state.access!=='readonly'} onError={setError} />}
+        {tab==='assistencia' && <RemoteAttendance standalone connected={connected} canWrite={state.access!=='readonly'} onError={setError} participants={state.painel?.participants} />}
         {tab==='mais' && <section className="rc-tab-section">
           <h2>Este aparelho</h2>
           <p>Permissão nos cronômetros: <b>{accessLabel[state.access ?? 'readonly']}</b></p>

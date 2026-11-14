@@ -21,7 +21,7 @@ async function setup(options:{now?:Date;kind?:'weekend'|'midweek'|null}={}) {
     getSettings:()=>SettingsSchema.parse({meeting:{passcode:'must-not-be-public'},tablet:{announcements:'private'}}),
     meeting:{getState:()=>meeting,start,pause:vi.fn(),pauseAndAdvance:vi.fn(),reset:vi.fn(),setActive:vi.fn()},
     bus:{subscribe:()=>()=>{}},
-    zoom:{getRaisedHands:()=>({order:[HAND],orderSource:'detection-time',partial:true})},
+    zoom:{listParticipants:()=>[HAND],getRaisedHands:()=>({order:[HAND],orderSource:'detection-time',partial:true})},
     obs:{getStatus:()=>({enabled:false,connected:false,currentScene:null,scenes:[],virtualCam:null,launching:false,lastError:null,updatedAt:'2026-11-04T00:00:00.000Z'}),setScene:vi.fn(),prepare:vi.fn()},
     recordedAttendance:()=>({date:'2026-11-04',zoom:3,presencial:40,total:43}),
   } as unknown as AppContext;
@@ -165,6 +165,7 @@ it('a device with painel receives hands, announcements and today attendance, and
   for(const body of [(await app.inject({url:'/remote-api/state',headers:h})).body,await wsMessage(app,h)]) {
     const painel=JSON.parse(body).painel;
     expect(painel.raisedHands).toEqual({order:[{id:'p1',displayName:'Participante Fictício Um',handRaisedAt:HAND.handRaisedAt}],orderSource:'detection-time',partial:true});
+    expect(painel.participants).toEqual([{id:'p1',displayName:'Participante Fictício Um',handRaised:true}]);
     expect(painel.announcements).toBe('private');expect(painel.attendance).toMatchObject({total:43});
     expect(JSON.stringify(painel)).not.toContain('isMuted');
   }

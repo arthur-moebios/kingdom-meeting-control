@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AttendanceSummary } from '@kmc/shared-types';
+import type { AttendanceSummary, RemoteParticipant } from '@kmc/shared-types';
 import { roomApi } from './remoteApi.js';
 
 export function whatsappText(a: AttendanceSummary): string {
@@ -15,7 +15,7 @@ async function copyText(text: string): Promise<void> {
   if (!ok) throw new Error('Não foi possível copiar.');
 }
 
-export function RemoteAttendance({ connected, canWrite, onError, standalone = false }: { connected: boolean; canWrite: boolean; onError: (m: string) => void; standalone?: boolean }) {
+export function RemoteAttendance({ connected, canWrite, onError, standalone = false, participants }: { connected: boolean; canWrite: boolean; onError: (m: string) => void; standalone?: boolean; participants?: RemoteParticipant[] }) {
   const api = roomApi('main');
   const [open, setOpen] = useState(standalone), [data, setData] = useState<AttendanceSummary | null>(null);
   const [draft, setDraft] = useState(''), [busy, setBusy] = useState(false), [copied, setCopied] = useState(false);
@@ -41,9 +41,21 @@ export function RemoteAttendance({ connected, canWrite, onError, standalone = fa
       <button disabled={dirty} onClick={() => void copy()}>Copiar para WhatsApp</button>
       {copied && <p className="small" role="status">Copiado! Cole no WhatsApp.</p>}
     </div>}</>;
-  if (standalone) return <section className="rc-tab-section"><h2>Assistência de hoje</h2>{body}</section>;
+  if (standalone) return <section className="rc-tab-section"><h2>Assistência de hoje</h2>{body}{participants && <ZoomParticipants list={participants} />}</section>;
   return <details className="rc-install" onToggle={e => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
     <summary>Assistência</summary>
     {body}
   </details>;
+}
+
+/** Quem está no Zoom agora. Só chega a aparelhos com o papel Painel (são nomes de pessoas). */
+function ZoomParticipants({ list }: { list: RemoteParticipant[] }) {
+  const sorted = [...list].sort((a, b) => Number(b.handRaised) - Number(a.handRaised) || a.displayName.localeCompare(b.displayName, 'pt-BR'));
+  return <section className="rc-card rc-zoom-people" aria-label="Participantes do Zoom">
+    <h2>Participantes no Zoom ({list.length})</h2>
+    {!list.length ? <p className="muted">Ninguém conectado ao Zoom agora.</p> : <ul className="rc-people">{sorted.map(p => <li key={p.id}>
+      <span className="rc-person-name">{p.displayName}</span>
+      <span className="rc-person-tags">{p.handRaised && <span title="Mão levantada">✋</span>}</span>
+    </li>)}</ul>}
+  </section>;
 }

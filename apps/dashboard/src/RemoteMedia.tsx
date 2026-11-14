@@ -37,7 +37,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function RemoteMedia({ connected, onError }: { connected: boolean; onError: (m: string | null) => void }) {
   const [data, setData] = useState<RemoteMediaState | null>(null), [busy, setBusy] = useState<string | null>(null);
   const [song, setSong] = useState(''), [link, setLink] = useState(''), [name, setName] = useState(''), [sent, setSent] = useState<string | null>(null);
-  const picker = useRef<HTMLInputElement>(null);
+  const picker = useRef<HTMLInputElement>(null), opener = useRef<HTMLInputElement>(null);
   const apply = (value: RemoteMediaState) => { setData(value); setName(value.name); };
   useEffect(() => { if (connected) mediaApi.state().then(apply).catch(e => onError(message(e))); }, [connected]);
   async function run(label: string, fn: () => Promise<void>) {
@@ -49,6 +49,18 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
       setBusy(`Enviando ${at + 1} de ${files.length}…`);
       apply(await mediaApi.image({ filename: file.name, ...(await prepareImage(file)) }));
     }
+  });
+  /** Abre uma playlist já pronta (.jwlplaylist, enviada por outro irmão) e acrescenta os itens; depois é só reordenar e completar. */
+  const openPlaylist = (file: File) => run('Abrindo a playlist…', async () => {
+    const data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+      reader.onerror = () => reject(new Error('Não foi possível ler o arquivo.'));
+      reader.readAsDataURL(file);
+    });
+    const result = await mediaApi.importPlaylist({ data, thumb: tileThumb('▶', '') });
+    apply(result);
+    setSent(`${result.added} ${result.added === 1 ? 'item acrescentado' : 'itens acrescentados'}${result.imported ? ` de “${result.imported}”` : ''}.${result.skipped ? ` ${result.skipped} ignorado(s): só entram imagem JPEG, cântico e vídeo do JW.org (áudio, PNG e vídeos do aparelho não).` : ''} Reordene ou adicione o que faltar, como cânticos.`);
   });
   const addSong = () => {
     const number = Number(song);
@@ -77,7 +89,7 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
   const disabled = !connected || busy !== null;
   return <section className="rc-tab-section rc-media">
     <h2>Playlist para o JW Library</h2>
-    <p className="small muted">Envie fotos e escolha cânticos. O computador do salão monta a playlist e abre no JW Library.</p>
+    <p className="small muted">Abra uma playlist pronta (.jwlplaylist), envie fotos e escolha cânticos. O computador do salão monta a playlist e abre no JW Library.</p>
     <label>Nome da playlist <input value={name} maxLength={80} disabled={disabled} onChange={e => setName(e.target.value)} onBlur={() => { if (name.trim() !== data.name) void change({ name: name.trim() }); }} /></label>
     <ul className="rc-list rc-media-list">{data.items.map((item, at) => <li key={item.id} className="rc-row rc-row-plain">
       <img src={`/remote-api/media/thumb/${item.id}`} alt="" loading="lazy" />
@@ -90,8 +102,10 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
     </li>)}</ul>
     {!data.items.length && <p className="rc-empty">Nenhum item ainda.</p>}
     <input ref={picker} type="file" accept="image/*" multiple hidden onChange={e => { const files = [...(e.target.files ?? [])]; e.target.value = ''; if (files.length) void addImages(files); }} />
+    <input ref={opener} type="file" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void openPlaylist(file); }} />
     <div className="rc-media-add">
-      <button type="button" disabled={disabled} onClick={() => picker.current?.click()}>Adicionar fotos</button>
+      <button type="button" disabled={disabled} onClick={() => opener.current?.click()}>Abrir playlist do JW Library</button>
+      <button type="button" className="secondary" disabled={disabled} onClick={() => picker.current?.click()}>Adicionar fotos</button>
       <form onSubmit={e => { e.preventDefault(); addSong(); }}>
         <input type="number" inputMode="numeric" min={1} max={200} placeholder="Nº do cântico" aria-label="Número do cântico" value={song} disabled={disabled} onChange={e => setSong(e.target.value)} />
         <button className="secondary" disabled={disabled || !song}>Adicionar cântico</button>

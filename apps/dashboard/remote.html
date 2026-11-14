@@ -14,6 +14,9 @@
       button, label, summary, nav { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
     </style>
     <script>
+      // O Android dispara beforeinstallprompt cedo, antes do React montar: guarda o evento para a tela oferecer a instalação.
+      window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__kmcInstall = e; window.dispatchEvent(new Event('kmc-install')); });
+      window.addEventListener('appinstalled', function () { window.__kmcInstall = null; });
       // O Safari do iPhone ignora user-scalable=no: a pinça é cancelada aqui.
       for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, function (e) { e.preventDefault(); }, { passive: false });
       document.addEventListener('touchmove', function (e) { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });

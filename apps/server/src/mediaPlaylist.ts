@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { deflateRawSync } from "node:zlib";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import type { RemoteMediaState } from "@kmc/shared-types";
@@ -94,6 +94,28 @@ export function zip(files: { name: string; data: Buffer }[], when = new Date()):
   end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16);
   return Buffer.concat([...parts, directory, end]);
 }
+/** Lê um ZIP comum (stored/deflate, sem zip64) inteiro em memória; basta para um .jwlplaylist. */
+export function unzip(buf: Buffer, maxEntryBytes = 40_000_000): Map<string, Buffer> {
+  const bad = () => fail("Este arquivo não parece uma playlist do JW Library (.jwlplaylist).");
+  let end = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65_557); i--) if (buf.readUInt32LE(i) === 0x06054b50) { end = i; break; }
+  if (end < 0) throw bad();
+  const count = buf.readUInt16LE(end + 10), files = new Map<string, Buffer>();
+  let at = buf.readUInt32LE(end + 16);
+  try {
+    for (let n = 0; n < count; n++) {
+      if (buf.readUInt32LE(at) !== 0x02014b50) throw bad();
+      const method = buf.readUInt16LE(at + 10), packed = buf.readUInt32LE(at + 20), size = buf.readUInt32LE(at + 24);
+      const nameLength = buf.readUInt16LE(at + 28), extra = buf.readUInt16LE(at + 30), comment = buf.readUInt16LE(at + 32), offset = buf.readUInt32LE(at + 42);
+      const name = buf.toString("utf8", at + 46, at + 46 + nameLength);
+      at += 46 + nameLength + extra + comment;
+      if (name.endsWith("/") || size > maxEntryBytes) continue;
+      const start = offset + 30 + buf.readUInt16LE(offset + 26) + buf.readUInt16LE(offset + 28), raw = buf.subarray(start, start + packed);
+      if (method === 0) files.set(name, raw); else if (method === 8) files.set(name, inflateRawSync(raw, { maxOutputLength: maxEntryBytes }));
+    }
+  } catch (error) { if ((error as { statusCode?: number }).statusCode === 400) throw error; throw bad(); }
+  return files;
+}
 const pad = (n: number) => String(n).padStart(2, "0");
 function localStamp(d: Date): string {
   const off = -d.getTimezoneOffset(), sign = off < 0 ? "-" : "+", abs = Math.abs(off);
@@ -158,6 +180,55 @@ export class MediaPlaylist {
     fs.writeFileSync(this.thumbPath(id), info.thumb ?? fallback);
     this.stored.items.push({ id, kind: "video", video, label: text(input.label, MEDIA_LIMITS.label) || info.title || "Vídeo do JW.org", ...(info.durationTicks ? { durationTicks: info.durationTicks } : {}) });
     this.save(); return this.state();
+  }
+  /**
+   * Abre uma playlist exportada do JW Library (.jwlplaylist) e ACRESCENTA os itens à playlist atual,
+   * na ordem original; depois dá para reordenar, renomear e acrescentar mais coisas como sempre.
+   * Imagens JPEG, cânticos e vídeos do JW.org entram; o resto (áudio, vídeo do aparelho, PNG) é contado em `skipped`.
+   */
+  importPlaylist(input: { data?: unknown; thumb?: unknown }): RemoteMediaState & { added: number; skipped: number; imported: string } {
+    if (typeof input.data !== "string" || input.data.length < 100) throw fail("Escolha um arquivo .jwlplaylist.");
+    const fallback = jpeg(input.thumb, MEDIA_LIMITS.thumbBytes, "Miniatura");
+    const files = unzip(Buffer.from(input.data, "base64")), database = files.get("userData.db");
+    if (!database) throw fail("Este arquivo não parece uma playlist do JW Library (.jwlplaylist).");
+    const tmp = path.join(this.deps.dir, `import-${process.pid}-${Date.now()}.db`);
+    fs.writeFileSync(tmp, database);
+    const wasEmpty = this.stored.items.length === 0;
+    let added = 0, skipped = 0, imported = "";
+    const isJpeg = (b: Buffer | undefined, limit: number): b is Buffer => !!b && b.length > 100 && b.length <= limit && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+    const db = new DatabaseSync(tmp);
+    try {
+      const tag = db.prepare("SELECT Name FROM Tag WHERE Type = 2 ORDER BY TagId LIMIT 1").get() as { Name?: string } | undefined;
+      imported = text(tag?.Name, MEDIA_LIMITS.name);
+      const rows = db.prepare("SELECT p.PlaylistItemId AS id, p.Label AS label, p.ThumbnailFilePath AS thumb FROM PlaylistItem p LEFT JOIN TagMap m ON m.PlaylistItemId = p.PlaylistItemId LEFT JOIN Tag t ON t.TagId = m.TagId AND t.Type = 2 ORDER BY t.TagId, m.Position, p.PlaylistItemId").all() as { id: number; label: string; thumb: string | null }[];
+      const media = db.prepare("SELECT i.FilePath AS file, i.OriginalFilename AS original FROM PlaylistItemIndependentMediaMap m JOIN IndependentMedia i ON i.IndependentMediaId = m.IndependentMediaId WHERE m.PlaylistItemId = ?");
+      const place = db.prepare("SELECT l.KeySymbol AS key, l.Track AS track, l.IssueTagNumber AS issue, l.DocumentId AS doc, m.BaseDurationTicks AS ticks FROM PlaylistItemLocationMap m JOIN Location l ON l.LocationId = m.LocationId WHERE m.PlaylistItemId = ?");
+      for (const row of rows) {
+        if (this.stored.items.length >= MEDIA_LIMITS.items) { skipped++; continue; }
+        const label = text(row.label, MEDIA_LIMITS.label) || "Item", thumb = row.thumb ? files.get(row.thumb) : undefined, id = this.newId();
+        const picture = media.get(row.id) as { file: string; original: string } | undefined;
+        if (picture) {
+          const data = files.get(picture.file);
+          if (!isJpeg(data, MEDIA_LIMITS.imageBytes)) { skipped++; continue; }
+          fs.writeFileSync(this.filePath(id), data); fs.writeFileSync(this.thumbPath(id), isJpeg(thumb, MEDIA_LIMITS.thumbBytes) ? thumb : isJpeg(data, MEDIA_LIMITS.thumbBytes) ? data : fallback);
+          this.stored.items.push({ id, kind: "image", label, original: text(picture.original, 120) || "imagem.jpeg" }); added++; continue;
+        }
+        const where = place.get(row.id) as { key: string | null; track: number | null; issue: number | null; doc: number | null; ticks: number | null } | undefined;
+        const lank = !where || !where.track ? null : where.doc ? `docid-${where.doc}_${where.track}_VIDEO` : where.key ? `pub-${where.key}${where.issue ? "_" + where.issue : ""}_${where.track}_VIDEO` : null;
+        const video = parseJwVideoLink(lank);
+        if (!video) { skipped++; continue; }
+        fs.writeFileSync(this.thumbPath(id), isJpeg(thumb, MEDIA_LIMITS.thumbBytes) ? thumb : fallback);
+        if (video.keySymbol === "sjjm" && !video.issue) this.stored.items.push({ id, kind: "song", song: video.track, label });
+        else this.stored.items.push({ id, kind: "video", video, label, ...(where?.ticks ? { durationTicks: where.ticks } : {}) });
+        added++;
+      }
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 400) throw error;
+      throw fail("Não consegui ler esta playlist. Exporte-a de novo pelo JW Library.");
+    } finally { db.close(); fs.rmSync(tmp, { force: true }); }
+    if (wasEmpty && !this.stored.name && imported) this.stored.name = imported;
+    this.save();
+    return { ...this.state(), added, skipped, imported };
   }
   update(input: { name?: unknown; order?: unknown; labels?: unknown; remove?: unknown }): RemoteMediaState {
     if (input.name !== undefined) this.stored.name = text(input.name, MEDIA_LIMITS.name);
