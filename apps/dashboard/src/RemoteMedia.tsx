@@ -37,6 +37,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function RemoteMedia({ connected, onError }: { connected: boolean; onError: (m: string | null) => void }) {
   const [data, setData] = useState<RemoteMediaState | null>(null), [busy, setBusy] = useState<string | null>(null);
   const [song, setSong] = useState(''), [link, setLink] = useState(''), [name, setName] = useState(''), [sent, setSent] = useState<string | null>(null);
+  const [pub, setPub] = useState<{ token: string; title: string; documents: { id: number; title: string; week: string; images: number; songs: number }[] } | null>(null), [withImages, setWithImages] = useState(true), [withSongs, setWithSongs] = useState(true);
   const picker = useRef<HTMLInputElement>(null), opener = useRef<HTMLInputElement>(null);
   const apply = (value: RemoteMediaState) => { setData(value); setName(value.name); };
   useEffect(() => { if (connected) mediaApi.state().then(apply).catch(e => onError(message(e))); }, [connected]);
@@ -51,16 +52,23 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
     }
   });
   /** Abre uma playlist já pronta (.jwlplaylist, enviada por outro irmão) e acrescenta os itens; depois é só reordenar e completar. */
-  const openPlaylist = (file: File) => run('Abrindo a playlist…', async () => {
+  const openPlaylist = (file: File) => run(/\.jwpub$/i.test(file.name) ? 'Abrindo a publicação…' : 'Abrindo a playlist…', async () => {
     const data = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
       reader.onerror = () => reject(new Error('Não foi possível ler o arquivo.'));
       reader.readAsDataURL(file);
     });
+    if (/\.jwpub$/i.test(file.name)) { setPub(await mediaApi.openJwpub({ data })); return; }
     const result = await mediaApi.importPlaylist({ data, thumb: tileThumb('▶', '') });
     apply(result);
     setSent(`${result.added} ${result.added === 1 ? 'item acrescentado' : 'itens acrescentados'}${result.imported ? ` de “${result.imported}”` : ''}.${result.skipped ? ` ${result.skipped} ignorado(s): só entram imagem JPEG, cântico e vídeo do JW.org (áudio, PNG e vídeos do aparelho não).` : ''} Reordene ou adicione o que faltar, como cânticos.`);
+  });
+  const addFromPub = (document: number) => run('Extraindo…', async () => {
+    if (!pub) return;
+    const result = await mediaApi.addFromJwpub({ token: pub.token, document, images: withImages, songs: withSongs, thumb: tileThumb('▶', '') });
+    apply(result);
+    setSent(`${result.added} ${result.added === 1 ? 'item acrescentado' : 'itens acrescentados'} à playlist.${result.skipped ? ` ${result.skipped} não puderam entrar.` : ''}`);
   });
   const addSong = () => {
     const number = Number(song);
@@ -89,7 +97,7 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
   const disabled = !connected || busy !== null;
   return <section className="rc-tab-section rc-media">
     <h2>Playlist para o JW Library</h2>
-    <p className="small muted">Abra uma playlist pronta (.jwlplaylist), envie fotos e escolha cânticos. O computador do salão monta a playlist e abre no JW Library.</p>
+    <p className="small muted">Abra uma playlist pronta (.jwlplaylist) ou uma publicação (.jwpub), envie fotos e escolha cânticos. O computador do salão monta a playlist e abre no JW Library.</p>
     <label>Nome da playlist <input value={name} maxLength={80} disabled={disabled} onChange={e => setName(e.target.value)} onBlur={() => { if (name.trim() !== data.name) void change({ name: name.trim() }); }} /></label>
     <ul className="rc-list rc-media-list">{data.items.map((item, at) => <li key={item.id} className="rc-row rc-row-plain">
       <img src={`/remote-api/media/thumb/${item.id}`} alt="" loading="lazy" />
@@ -103,8 +111,19 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
     {!data.items.length && <p className="rc-empty">Nenhum item ainda.</p>}
     <input ref={picker} type="file" accept="image/*" multiple hidden onChange={e => { const files = [...(e.target.files ?? [])]; e.target.value = ''; if (files.length) void addImages(files); }} />
     <input ref={opener} type="file" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void openPlaylist(file); }} />
+    {pub && <section className="rc-card rc-pub" aria-label="Publicação aberta">
+      <h2>{pub.title}</h2>
+      <p className="small muted">Toque em “Adicionar” para acrescentar à playlist as imagens e os cânticos do artigo, na ordem do texto.</p>
+      <label className="rc-check"><input type="checkbox" checked={withImages} onChange={e => setWithImages(e.target.checked)} /> Imagens</label>
+      <label className="rc-check"><input type="checkbox" checked={withSongs} onChange={e => setWithSongs(e.target.checked)} /> Cânticos e vídeos</label>
+      <ul className="rc-list">{pub.documents.map(d => <li key={d.id} className="rc-row rc-row-plain">
+        <div className="rc-rowmain">{d.week && <span className="rc-sec">{d.week}</span>}<span className="rc-rowtitle rc-wrap">{d.title}</span><span className="small muted">{d.images} imagem(ns) · {d.songs} cântico(s)/vídeo(s)</span></div>
+        <button type="button" className="secondary" disabled={disabled || (!withImages && !withSongs)} onClick={() => void addFromPub(d.id)}>Adicionar</button>
+      </li>)}</ul>
+      <button type="button" className="secondary" onClick={() => setPub(null)}>Fechar publicação</button>
+    </section>}
     <div className="rc-media-add">
-      <button type="button" disabled={disabled} onClick={() => opener.current?.click()}>Abrir playlist do JW Library</button>
+      <button type="button" disabled={disabled} onClick={() => opener.current?.click()}>Abrir playlist ou publicação (.jwlplaylist, .jwpub)</button>
       <button type="button" className="secondary" disabled={disabled} onClick={() => picker.current?.click()}>Adicionar fotos</button>
       <form onSubmit={e => { e.preventDefault(); addSong(); }}>
         <input type="number" inputMode="numeric" min={1} max={200} placeholder="Nº do cântico" aria-label="Número do cântico" value={song} disabled={disabled} onChange={e => setSong(e.target.value)} />

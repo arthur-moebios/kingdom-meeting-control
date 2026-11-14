@@ -202,6 +202,8 @@ export function registerTimerRemote(app: FastifyInstance, ctx: AppContext, gatew
     return service.devicesFor(req);
   });
   app.post('/remote-api/media/import',{preHandler:mediaWrite,bodyLimit:80_000_000},media(body=>ctx.media.importPlaylist(body)));
+  app.post('/remote-api/media/jwpub',{preHandler:mediaWrite,bodyLimit:80_000_000},media(body=>ctx.media.openJwpub(body)));
+  app.post('/remote-api/media/jwpub/add',{preHandler:mediaWrite,bodyLimit:500_000},media(body=>ctx.media.addFromJwpub(body)));
   app.post('/remote-api/media/update',{preHandler:mediaWrite,bodyLimit:64_000},media(body=>ctx.media.update(body)));
   app.post('/remote-api/media/clear',{preHandler:mediaWrite,bodyLimit:1024},media(()=>ctx.media.clear()));
   app.post('/remote-api/media/send',{preHandler:mediaWrite,bodyLimit:1024},media(()=> {const {file:_file,...sent}=ctx.media.send();return sent;}));

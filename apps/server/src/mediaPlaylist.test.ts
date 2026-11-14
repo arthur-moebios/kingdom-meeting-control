@@ -150,3 +150,31 @@ it('importa uma playlist .jwlplaylist: acrescenta na ordem, com cântico, vídeo
   // reexportar o resultado preserva as referências
   expect(() => library().media.importPlaylist({ data: Buffer.from('x'.repeat(300)).toString('base64'), thumb: jpeg('f') })).toThrow(/playlist do JW Library/);
 });
+
+it('abre um .jwpub e injeta imagens e cânticos de um artigo, na ordem do texto', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kmc-jwpub-')); dirs.push(dir);
+  const dbFile = path.join(dir, 'w.db'), db = new DatabaseSync(dbFile);
+  db.exec(`CREATE TABLE Publication(Title TEXT); CREATE TABLE Document(DocumentId INTEGER, Title TEXT, ContextTitle TEXT);
+    CREATE TABLE Multimedia(MultimediaId INTEGER, MajorType INTEGER, FilePath TEXT, Caption TEXT, Label TEXT, KeySymbol TEXT, Track INTEGER, IssueTagNumber INTEGER, MepsDocumentId INTEGER);
+    CREATE TABLE DocumentMultimedia(DocumentId INTEGER, MultimediaId INTEGER, BeginParagraphOrdinal INTEGER);
+    INSERT INTO Publication VALUES ('A Sentinela (Estudo) — 2026');
+    INSERT INTO Document VALUES (0,'Capa',NULL),(2,'Para agradar a Jeová','4-10 DE JANEIRO DE 2027');
+    INSERT INTO Multimedia VALUES (1,1,'cap.jpg','','',NULL,NULL,0,NULL),(3,1,'sqr.jpg','','capa',NULL,NULL,0,NULL),
+      (4,1,'cnt_1.jpg','Nossa consciência funciona (Veja o parágrafo 5.)','',NULL,NULL,0,NULL),(6,2,'','','','sjjm',36,0,NULL),(7,2,'','','','sjjm',159,0,NULL);
+    INSERT INTO DocumentMultimedia VALUES (2,3,NULL),(2,7,37),(2,4,11),(2,6,2);`);
+  db.close();
+  const contents = zip([{ name: 'w.db', data: fs.readFileSync(dbFile) }, { name: 'cnt_1.jpg', data: Buffer.from(jpeg('c'), 'base64') }]);
+  const jwpub = zip([{ name: 'manifest.json', data: Buffer.from('{}') }, { name: 'contents', data: contents }]);
+  const { media } = library();
+  const opened = media.openJwpub({ data: jwpub.toString('base64') });
+  expect(opened.title).toContain('Sentinela');
+  expect(opened.documents).toEqual([{ id: 2, title: 'Para agradar a Jeová', week: '4-10 DE JANEIRO DE 2027', images: 1, songs: 2 }]);
+  const result = await media.addFromJwpub({ token: opened.token, document: 2, thumb: jpeg('f') });
+  expect(result.added).toBe(3);
+  expect(result.items.map(i => [i.kind, i.song])).toEqual([['song', 36], ['image', undefined], ['song', 159]]);
+  expect(result.items[1]!.label).toBe('Nossa consciência funciona');
+  const onlyImages = await media.addFromJwpub({ token: opened.token, document: 2, songs: false, thumb: jpeg('f') });
+  expect(onlyImages.added).toBe(1);
+  await expect(media.addFromJwpub({ token: 'nope', document: 2, thumb: jpeg('f') })).rejects.toThrow(/expirou/);
+  expect(() => media.openJwpub({ data: Buffer.from('x'.repeat(300)).toString('base64') })).toThrow(/\.jwpub/);
+});

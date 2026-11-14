@@ -95,8 +95,8 @@ export function zip(files: { name: string; data: Buffer }[], when = new Date()):
   return Buffer.concat([...parts, directory, end]);
 }
 /** Lê um ZIP comum (stored/deflate, sem zip64) inteiro em memória; basta para um .jwlplaylist. */
-export function unzip(buf: Buffer, maxEntryBytes = 40_000_000): Map<string, Buffer> {
-  const bad = () => fail("Este arquivo não parece uma playlist do JW Library (.jwlplaylist).");
+export function unzip(buf: Buffer, maxEntryBytes = 40_000_000, what = "uma playlist do JW Library (.jwlplaylist)"): Map<string, Buffer> {
+  const bad = () => fail(`Este arquivo não parece ${what}.`);
   let end = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65_557); i--) if (buf.readUInt32LE(i) === 0x06054b50) { end = i; break; }
   if (end < 0) throw bad();
@@ -123,7 +123,9 @@ function localStamp(d: Date): string {
 }
 
 export interface MediaPlaylistDeps { dir: string; clock?: () => Date; open?: (file: string) => boolean; lookup?: (lank: string) => Promise<JwMediaInfo>; }
+export interface JwpubDocument { id: number; title: string; week: string; images: number; songs: number; }
 export class MediaPlaylist {
+  private readonly jwpubs = new Map<string, { files: Map<string, Buffer>; db: Buffer; at: number }>();
   private stored: Stored;
   private readonly clock: () => Date;
   constructor(private readonly deps: MediaPlaylistDeps) {
@@ -180,6 +182,86 @@ export class MediaPlaylist {
     fs.writeFileSync(this.thumbPath(id), info.thumb ?? fallback);
     this.stored.items.push({ id, kind: "video", video, label: text(input.label, MEDIA_LIMITS.label) || info.title || "Vídeo do JW.org", ...(info.durationTicks ? { durationTicks: info.durationTicks } : {}) });
     this.save(); return this.state();
+  }
+  /**
+   * Abre uma publicação do JW Library (.jwpub) e lista os artigos que trazem imagens ou cânticos.
+   * O arquivo fica em memória por 15 minutos (`token`) para que se possa extrair de vários artigos sem reenviá-lo.
+   * Formato e achados: docs/jwpub.md.
+   */
+  openJwpub(input: { data?: unknown }): { token: string; title: string; documents: JwpubDocument[] } {
+    if (typeof input.data !== "string" || input.data.length < 100) throw fail("Escolha um arquivo .jwpub.");
+    const bad = () => fail("Este arquivo não parece uma publicação do JW Library (.jwpub).");
+    const kind = "uma publicação do JW Library (.jwpub)", outer = unzip(Buffer.from(input.data, "base64"), 40_000_000, kind), inner = outer.get("contents");
+    if (!inner) throw bad();
+    const files = unzip(inner, 60_000_000, kind), dbName = [...files.keys()].find(n => n.toLowerCase().endsWith(".db"));
+    if (!dbName) throw bad();
+    const database = files.get(dbName)!;
+    const now = Date.now();
+    for (const [key, value] of this.jwpubs) if (now - value.at > 15 * 60_000) this.jwpubs.delete(key);
+    while (this.jwpubs.size >= 3) this.jwpubs.delete(this.jwpubs.keys().next().value as string);
+    const token = this.newId();
+    this.jwpubs.set(token, { files, db: database, at: now });
+    return { token, ...this.readJwpub(files, database, (db) => {
+      const title = (db.prepare("SELECT Title FROM Publication LIMIT 1").get() as { Title?: string } | undefined)?.Title;
+      const rows = db.prepare("SELECT d.DocumentId AS id, d.Title AS title, d.ContextTitle AS week, " +
+        "SUM(m.MajorType = 1) AS images, SUM(m.MajorType = 2) AS songs FROM Document d JOIN DocumentMultimedia dm ON dm.DocumentId = d.DocumentId " +
+        "JOIN Multimedia m ON m.MultimediaId = dm.MultimediaId WHERE dm.BeginParagraphOrdinal IS NOT NULL GROUP BY d.DocumentId HAVING images + songs > 0 ORDER BY d.DocumentId").all() as { id: number; title: string; week: string | null; images: number; songs: number }[];
+      return { title: text(title, 160) || "Publicação", documents: rows.map(r => ({ id: r.id, title: text(r.title, 160), week: text(r.week, 80), images: r.images, songs: r.songs })) };
+    }) };
+  }
+  private readJwpub<T>(files: Map<string, Buffer>, database: Buffer, read: (db: DatabaseSync) => T): T {
+    void files;
+    const tmp = path.join(this.deps.dir, `jwpub-${process.pid}-${Date.now()}.db`);
+    fs.writeFileSync(tmp, database);
+    const db = new DatabaseSync(tmp);
+    try { return read(db); }
+    catch (error) { if ((error as { statusCode?: number }).statusCode === 400) throw error; throw fail("Não consegui ler esta publicação (.jwpub)."); }
+    finally { db.close(); fs.rmSync(tmp, { force: true }); }
+  }
+  /** Acrescenta à playlist as imagens e os cânticos/vídeos de um artigo do .jwpub aberto, na ordem do texto. */
+  async addFromJwpub(input: { token?: unknown; document?: unknown; images?: unknown; songs?: unknown; thumb?: unknown }): Promise<RemoteMediaState & { added: number; skipped: number }> {
+    const entry = typeof input.token === "string" ? this.jwpubs.get(input.token) : undefined;
+    if (!entry) throw fail("A publicação expirou. Abra o arquivo .jwpub de novo.");
+    entry.at = Date.now();
+    const document = Number(input.document), wantImages = input.images !== false, wantSongs = input.songs !== false;
+    if (!Number.isInteger(document)) throw fail("Escolha um artigo.");
+    const fallback = jpeg(input.thumb, MEDIA_LIMITS.thumbBytes, "Miniatura");
+    const rows = this.readJwpub(entry.files, entry.db, db => {
+      const title = (db.prepare("SELECT Title FROM Document WHERE DocumentId = ?").get(document) as { Title?: string } | undefined)?.Title;
+      if (title === undefined) throw fail("Artigo não encontrado nesta publicação.");
+      return { title: text(title, 80), rows: db.prepare("SELECT m.MajorType AS major, m.FilePath AS file, m.Caption AS caption, m.Label AS label, m.KeySymbol AS key, m.Track AS track, m.IssueTagNumber AS issue, m.MepsDocumentId AS doc " +
+        "FROM DocumentMultimedia dm JOIN Multimedia m ON m.MultimediaId = dm.MultimediaId WHERE dm.DocumentId = ? AND dm.BeginParagraphOrdinal IS NOT NULL ORDER BY dm.BeginParagraphOrdinal, m.MultimediaId").all(document) as
+        { major: number; file: string; caption: string | null; label: string | null; key: string | null; track: number | null; issue: number | null; doc: number | null }[] };
+    });
+    const clean = (value: string | null) => text((value ?? "").replace(/<[^>]*>/g, " ").replace(/\s*\((?:Veja|Ver)[^)]*\)\s*$/i, "").replace(/\s+/g, " "), MEDIA_LIMITS.label);
+    let added = 0, skipped = 0, pictures = this.stored.items.filter(i => i.kind === "image").length;
+    for (const row of rows.rows) {
+      if (this.stored.items.length >= MEDIA_LIMITS.items) { skipped++; continue; }
+      const id = this.newId();
+      if (row.major === 1) {
+        const data = row.file ? entry.files.get(row.file) : undefined;
+        if (!wantImages) continue;
+        if (!data || data.length < 100 || data.length > MEDIA_LIMITS.imageBytes || data[0] !== 0xff || data[1] !== 0xd8) { skipped++; continue; }
+        fs.writeFileSync(this.filePath(id), data);
+        fs.writeFileSync(this.thumbPath(id), data.length <= MEDIA_LIMITS.thumbBytes ? data : fallback);
+        pictures++;
+        this.stored.items.push({ id, kind: "image", label: clean(row.caption) || clean(row.label) || `${rows.title} — imagem ${pictures}`, original: path.basename(row.file) });
+        added++;
+      } else if (row.major === 2) {
+        if (!wantSongs) continue;
+        const lank = row.doc ? `docid-${row.doc}_${row.track ?? 1}_VIDEO` : row.key && row.track ? `pub-${row.key}${row.issue ? "_" + row.issue : ""}_${row.track}_VIDEO` : null;
+        const video = parseJwVideoLink(lank);
+        if (!video) { skipped++; continue; }
+        const info = await this.lookup(video.lank);
+        if (this.stored.items.length >= MEDIA_LIMITS.items) { skipped++; continue; }
+        fs.writeFileSync(this.thumbPath(id), info.thumb ?? fallback);
+        if (video.keySymbol === "sjjm" && !video.issue) this.stored.items.push({ id, kind: "song", song: video.track, label: info.title ? `Cântico ${info.title}` : `Cântico ${video.track}` });
+        else this.stored.items.push({ id, kind: "video", video, label: info.title || "Vídeo do JW.org", ...(info.durationTicks ? { durationTicks: info.durationTicks } : {}) });
+        added++;
+      }
+    }
+    this.save();
+    return { ...this.state(), added, skipped };
   }
   /**
    * Abre uma playlist exportada do JW Library (.jwlplaylist) e ACRESCENTA os itens à playlist atual,
