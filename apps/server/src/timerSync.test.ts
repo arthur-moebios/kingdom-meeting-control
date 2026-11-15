@@ -99,6 +99,22 @@ it('refazer a medição depois do reset substitui; ajuste manual do tempo també
   expect(parts.map(p => p.usado_s)).toEqual([null, 200, 1500]);
 });
 
+it('ajuste manual logo após reiniciar o app (primeira observação) também consolida', () => {
+  const { load, measure, rooms, history, db, dates, names, advance } = setup();
+  load('main', 'midweek', MID);
+  measure('main', 1, 300);
+  // O app reinicia: o histórico em memória (último tempo visto) se perde; a reunião e o banco continuam.
+  const reaberto = new TimerHistory({
+    db, now: () => new Date(Date.parse('2026-11-11T22:30:00.000Z')), getMeeting: r => rooms[r].getState(), getDate: r => dates[r], getAssignments: r => names[r],
+    onChange: () => {},
+  });
+  void history; void advance;
+  const id = rooms.main.getState().parts[1]!.id;
+  rooms.main.setElapsed(id, 420); // o operador corrige o tempo à mão — primeiro evento depois do reinício
+  reaberto.observe('main');
+  expect(reaberto.load('2026-11-11', 'meio_semana', 'main')!.parts[1]!.usado_s).toBe(420);
+});
+
 it('parte ainda correndo não é gravada, exceto no encerramento do app (live)', () => {
   const { load, rooms, history, advance } = setup();
   load('main', 'midweek', MID);

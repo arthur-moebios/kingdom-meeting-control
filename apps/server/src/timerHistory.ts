@@ -97,7 +97,7 @@ export class TimerHistory {
       const names = assignments[part.id];
       if (names) { rec.designado = cut(names.name, 160); rec.ajudante = cut(names.secondName, 160); }
 
-      const measured = this.measured(part, nowMs, live);
+      const measured = this.measured(part, nowMs, live, rec.usado_s);
       if (measured !== null && measured !== rec.usado_s) { rec.usado_s = measured; measuredChange = true; }
     }
     // Registros que sumiram da programação: mantêm-se só os que têm medição.
@@ -114,7 +114,7 @@ export class TimerHistory {
   }
 
   /** Segundos a registrar para a parte agora, ou null (nada a registrar). */
-  private measured(part: MeetingPart, nowMs: number, live: boolean): number | null {
+  private measured(part: MeetingPart, nowMs: number, live: boolean, stored: number | null): number | null {
     const prev = this.lastBase.get(part.id);
     this.lastBase.set(part.id, part.baseElapsedSec);
     let total: number;
@@ -122,7 +122,13 @@ export class TimerHistory {
       if (!live) return null; // correndo: o tempo só se consolida ao parar
       total = part.baseElapsedSec + Math.max(0, (nowMs - Date.parse(part.startedAt)) / 1000);
     } else {
-      if (prev === undefined) return null;        // primeira vista: só referência
+      // Parte que JÁ tem medição guardada: o que vale é a diferença para o guardado, não a memória do último
+      // valor visto (que se perde ao reiniciar o app — e o primeiro ajuste manual depois disso sumia).
+      if (stored !== null) {
+        const sec = Math.min(86_400, Math.round(part.baseElapsedSec));
+        return sec > 0 && sec !== stored ? sec : null;
+      }
+      if (prev === undefined) return null;        // primeira vista de parte nunca medida: só referência
       if (prev === part.baseElapsedSec) return null; // nada mudou
       total = part.baseElapsedSec;
     }
