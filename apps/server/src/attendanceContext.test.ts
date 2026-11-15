@@ -67,6 +67,28 @@ it('auto-captura do Zoom emite só quando o número consolidado muda', async () 
   expect(events).toHaveLength(2);
 });
 
+it('Zoom: reabrir a reunião com assistência menor não altera nada, nem local nem na fila do Mapas JW', async () => {
+  const { ctx, events } = make({ KMC_MAPASJW_URL: 'https://exemplo.invalid', KMC_MAPASJW_TOKEN: 't' });
+  const raw = { pollName: 'Presença', question: 'q', totalVoted: 1, totalParticipants: 3, options: [{ label: '5', votes: 1 }] };
+  (ctx as unknown as { zoom: unknown }).zoom = { state: 'IN_MEETING', scrapePollResults: async () => raw, getStatus: () => ({ participantCount: 3 }) };
+  await ctx.capturePollResults(false);
+  expect(ctx.attendanceFor(today()).zoom).toBe(7); // 5 + 2 ausentes
+  const pending = ctx.db.outboxList(10).map(o => o.payload);
+  // reunião reaberta, menos gente e outro nome de enquete
+  raw.options = [{ label: '2', votes: 1 }];
+  await ctx.capturePollResults(false);
+  raw.pollName = 'Presença 2';
+  await ctx.capturePollResults(false);
+  expect(ctx.attendanceFor(today()).zoom).toBe(7);
+  expect(ctx.db.pollResultsForDate(today())).toHaveLength(1);
+  expect(events).toHaveLength(1);
+  expect(ctx.db.outboxList(10).map(o => o.payload)).toEqual(pending);
+  // um número maior volta a valer
+  raw.pollName = 'Presença'; raw.options = [{ label: '9', votes: 1 }];
+  await ctx.capturePollResults(false);
+  expect(ctx.attendanceFor(today()).zoom).toBe(11);
+});
+
 it('REST: :date devolve {date,presencial,zoom,total}; today e sync existem; sync exige admin', async () => {
   const { ctx } = make({}, true);
   const app = await buildApp(ctx);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { RemoteMediaState } from '@kmc/shared-types';
 import { mediaApi } from './remoteApi.js';
 
@@ -38,7 +38,6 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
   const [data, setData] = useState<RemoteMediaState | null>(null), [busy, setBusy] = useState<string | null>(null);
   const [song, setSong] = useState(''), [link, setLink] = useState(''), [name, setName] = useState(''), [sent, setSent] = useState<string | null>(null);
   const [pub, setPub] = useState<{ token: string; title: string; documents: { id: number; title: string; week: string; images: number; songs: number }[] } | null>(null), [withImages, setWithImages] = useState(true), [withSongs, setWithSongs] = useState(true);
-  const picker = useRef<HTMLInputElement>(null), opener = useRef<HTMLInputElement>(null);
   const apply = (value: RemoteMediaState) => { setData(value); setName(value.name); };
   useEffect(() => { if (connected) mediaApi.state().then(apply).catch(e => onError(message(e))); }, [connected]);
   async function run(label: string, fn: () => Promise<void>) {
@@ -109,8 +108,6 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
       </div>
     </li>)}</ul>
     {!data.items.length && <p className="rc-empty">Nenhum item ainda.</p>}
-    <input ref={picker} type="file" accept="image/*" multiple hidden onChange={e => { const files = [...(e.target.files ?? [])]; e.target.value = ''; if (files.length) void addImages(files); }} />
-    <input ref={opener} type="file" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void openPlaylist(file); }} />
     {pub && <section className="rc-card rc-pub" aria-label="Publicação aberta">
       <h2>{pub.title}</h2>
       <p className="small muted">Toque em “Adicionar” para acrescentar à playlist as imagens e os cânticos do artigo, na ordem do texto.</p>
@@ -123,8 +120,13 @@ export function RemoteMedia({ connected, onError }: { connected: boolean; onErro
       <button type="button" className="secondary" onClick={() => setPub(null)}>Fechar publicação</button>
     </section>}
     <div className="rc-media-add">
-      <button type="button" disabled={disabled} onClick={() => opener.current?.click()}>Abrir playlist ou publicação (.jwlplaylist, .jwpub)</button>
-      <button type="button" className="secondary" disabled={disabled} onClick={() => picker.current?.click()}>Adicionar fotos</button>
+      {/* <label> nativo em vez de input.click(): no Android (PWA instalado) o seletor abre sem depender de script. */}
+      <label className={`btn rc-filebtn${disabled ? ' disabled' : ''}`}>Abrir playlist ou publicação (.jwlplaylist, .jwpub)
+        <input type="file" className="rc-file-input" disabled={disabled} onChange={e => { const input = e.currentTarget, file = input.files?.[0]; if (file) void openPlaylist(file).finally(() => { input.value = ''; }); }} />
+      </label>
+      <label className={`btn secondary rc-filebtn${disabled ? ' disabled' : ''}`}>Adicionar fotos
+        <input type="file" className="rc-file-input" accept="image/*" multiple disabled={disabled} onChange={e => { const input = e.currentTarget, files = [...(input.files ?? [])]; if (files.length) void addImages(files).finally(() => { input.value = ''; }); }} />
+      </label>
       <form onSubmit={e => { e.preventDefault(); addSong(); }}>
         <input type="number" inputMode="numeric" min={1} max={200} placeholder="Nº do cântico" aria-label="Número do cântico" value={song} disabled={disabled} onChange={e => setSong(e.target.value)} />
         <button className="secondary" disabled={disabled || !song}>Adicionar cântico</button>

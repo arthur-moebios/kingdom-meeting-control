@@ -397,7 +397,14 @@ export class AppContext {
       options: raw.options,
       capturedAt: now.toISOString(),
     };
-    const zoomBefore = zoomAttendance(this.db.pollResultsForDate(date));
+    const dayBefore = this.db.pollResultsForDate(date);
+    const zoomBefore = zoomAttendance(dayBefore), incoming = zoomAttendance([result]);
+    // Mesma reunião reaberta (ou gente saindo no fim): a contagem do dia nunca diminui, nem local nem no Mapas JW.
+    // Mantém o que já está registrado; só um número maior (ou igual) substitui.
+    const sameName = dayBefore.find(p => p.pollName === raw.pollName);
+    if (zoomBefore !== null && ((incoming !== null && incoming < zoomBefore) || (incoming === null && sameName && zoomAttendance([sameName]) !== null))) {
+      return sameName ?? dayBefore[0] ?? result;
+    }
     this.db.upsertPollResult(result);
     // Auto-captura roda a cada 30 s: só há evento quando o número do Zoom realmente muda.
     if (zoomAttendance(this.db.pollResultsForDate(date)) !== zoomBefore) this.publishAttendanceChanged(date);
